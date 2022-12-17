@@ -43,6 +43,11 @@ class AddSecurities(NeedCompanyCommand):
     securities: list[model.Security]
 
 @dataclass
+class AddSecurityAccnOccurence(NeedCompanyCommand):
+    security_attributes: dict
+    filing_accn: str
+
+@dataclass
 class AddShelfRegistration(NeedCompanyCommand):
     shelf_registration: model.ShelfRegistration
 

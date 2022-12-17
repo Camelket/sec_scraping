@@ -125,8 +125,16 @@ def add_outstanding_security_fact(cmd: commands.AddOutstandingSecurityFact, uow:
         else:
             logger.info(f"OutstandingSecurity({cmd.outstanding}) couldnt be added, didnt find a Security which to assign it to.")
         
-        
-        
+def add_security_accn_occurence(cmd: commands.AddSecurityAccnOccurence, uow: AbstractUnitOfWork):
+    with uow as u:
+        company: model.Company = u.company.get(symbol=cmd.symbol)
+        security: model.Security = company.get_security_by_attributes(cmd.security_attributes)
+        if security:
+            occurence = model.SecurityAccnOccurence(security.id, cmd.filing_accn)
+            u.session.add(occurence)
+            u.commit()
+        else:
+            logger.warning(f"Didnt add SecurityAccnOccurence, because we couldnt find a security for {company.symbol} matching attributes: {cmd.security_attributes}")
 
 COMMAND_HANDLERS = {
     commands.AddCompany: add_company,
@@ -141,6 +149,7 @@ COMMAND_HANDLERS = {
     commands.AddEffectRegistration: add_effect_registration,
 
     commands.AddOutstandingSecurityFact: add_outstanding_security_fact,
+    commands.AddSecurityAccnOccurence: add_security_accn_occurence,
 
 }
 

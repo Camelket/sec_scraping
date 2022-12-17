@@ -34,6 +34,46 @@ fake_filing_link = {
     'file_number': '333-238927',
 }
 
+fake_company = {
+    "name":"random company",
+    "cik":"0000000001",
+    "sic":9000,
+    "symbol":"RANC",
+    "description_":"random description"
+}
+
+fake_common_stock = {
+    "name": "common stock",
+    "secu_attributes": model.CommonShare(name="common stock")
+}
+
+fake_shelf_registration = {
+    "accn":"000143774918017591",
+    "file_number": "1",
+    "form_type": "S-3",
+    "capacity": 10000
+}
+
+
+fake_resale_registration = {
+    "accn": "000143774918017592",
+    "file_number": 2,
+    "form_type": "S-3",
+    "filing_date": datetime.date(2018, 9, 29),
+    "effect_date": None,
+    "last_update": None,
+    "expiry": None,
+    "total_amount_raised": None
+}
+
+fake_shelf_offering = {
+    "offering_type": "ATM",
+    "accn": "000143774918017592",
+    "anticipated_offering_amount": 5000,
+    "commencment_date": datetime.date(2018, 10, 1),
+    "end_date": datetime.date(2021, 10, 1)
+}
+
 company_data = {
         "sics": {
             "sic": 9000,
@@ -147,6 +187,8 @@ postgresql_np = factories.postgresql("postgresql_my_proc", dbname=cnf.DILUTION_D
 
 @pytest.fixture
 def get_bootstrapped_dilution_db(postgresql_np):
+    # hacky fix for a bug i dont understand: when running pytest over plugin creating mappers works fine, over cmd pytest creating mappers gives error of mappers already defined, despite logging only showing invocation once.. calling clear_mappers ensures this doesnt happen.
+    clear_mappers()
     dilution_db = bootstrap_dilution_db(
         start_orm=True,
         config=cnf
@@ -179,20 +221,19 @@ def add_example_company(db: DilutionDB):
     with uow as u:
         u.session.add(sic)
         u.session.commit()
-
-    company = model.Company(
-        name="random company",
-        cik="0000000001",
-        sic=9000,
-        symbol="RANC",
-        description_="random description"
-    )
+    company = model.Company(**fake_company)
     with uow as u:
         u.company.add(company)
         u.commit()
-    
-        
 
+def add_example_common_stock(db: DilutionDB):
+    with db.uow as u:
+        company: model.Company = u.company.get(symbol=fake_company["symbol"])
+        assert len(company.securities) == 0
+        company.add_security(
+            model.Security(**fake_common_stock))
+        u.commit()
+    
 def test_connect(get_session):
     session = get_session
     tables = session.execute(text("Select * from information_schema.tables")).fetchall()
@@ -260,7 +301,6 @@ def test_dilution_db_inital_population(get_bootstrapped_dilution_db, get_uow, ge
             assert "333-216231" in shelf_file_numbers
     
 
-
 def test_live_add_company(get_bootstrapped_dilution_db, get_session):
     sic = model.Sic(9000, "random sector", "random industry", "random divison")
     db = get_bootstrapped_dilution_db
@@ -272,18 +312,12 @@ def test_live_add_company(get_bootstrapped_dilution_db, get_session):
     result = session.execute(text("SELECT * FROM sics")).fetchall()
     assert result == [(9000, 'random sector', 'random industry', 'random divison')]
 
-    company = model.Company(
-        name="random company",
-        cik="0000000001",
-        sic=9000,
-        symbol="RANC",
-        description_="random description"
-    )
+    company = model.Company(**fake_company)
     with uow as u:
         u.company.add(company)
         u.commit()
     with uow as u:
-        result:model.Company = u.company.get(symbol="RANC")
+        result:model.Company = u.company.get(symbol=fake_company["symbol"])
         
     with uow as u:
         local_res = u.session.merge(result)
@@ -296,6 +330,67 @@ def test_live_add_company(get_bootstrapped_dilution_db, get_session):
         print(local_res, company)
         assert local_res == company
 
+def test_live_add_security(get_bootstrapped_dilution_db):
+    db = get_bootstrapped_dilution_db
+    uow = db.uow
+    add_example_company(db)        
+    with uow as u:
+        company: model.Company = u.company.get(symbol=fake_company["symbol"])
+        assert len(company.securities) == 0
+        company.add_security(
+            model.Security(**{
+            "name": "common stock",
+            "secu_attributes": model.CommonShare(name="common stock")
+        }))
+        u.commit()
+    with uow as u:
+        company: model.Company = u.company.get(symbol=fake_company["symbol"])
+        assert len(company.securities) == 1
+
+def test_live_get_security_from_company_by_attributes(get_bootstrapped_dilution_db):
+    db = get_bootstrapped_dilution_db
+    uow = db.uow
+    add_example_company(db)
+    with uow as u:
+        company: model.Company = u.company.get(symbol=fake_company["symbol"])
+        assert len(company.securities) == 0
+        company.add_security(
+            model.Security(**{
+            "name": "common stock",
+            "secu_attributes": model.CommonShare(name="common stock")
+        }))
+        u.commit()
+    with uow as u:
+        company = u.company.get(symbol=fake_company["symbol"])
+        security = company.get_security_by_attributes("common stock", {"name": "common stock"})
+        assert security.name == "common stock"
+
+def test_live_add_securityaccnoccurence(get_bootstrapped_dilution_db):
+    db = get_bootstrapped_dilution_db
+    uow = db.uow
+    add_example_company(db)
+    with uow as u:
+        company: model.Company = u.company.get(symbol=fake_company["symbol"])
+        assert len(company.securities) == 0
+        company.add_security(
+            model.Security(**{
+            "name": "common stock",
+            "secu_attributes": model.CommonShare(name="common stock")
+        }))
+        u.commit()
+    db.create_filing_link(
+        **fake_filing_link
+    )
+    with uow as u:
+        company = u.company.get(symbol=fake_company["symbol"])
+        security = company.get_security_by_attributes("common stock", {"name": "common stock"})
+        occurence = model.SecurityAccnOccurence(security.id, fake_filing_link["accn"])
+        u.session.add(occurence)
+        u.commit()
+    with uow as u:
+        assert u.session.query(model.SecurityAccnOccurence).all()[0].accn == fake_filing_link["accn"]
+
+
 def test_transient_model_object_requeried_in_subtransaction(get_bootstrapped_dilution_db):
     db = get_bootstrapped_dilution_db
     uow = db.uow
@@ -306,13 +401,7 @@ def test_transient_model_object_requeried_in_subtransaction(get_bootstrapped_dil
         u.session.add(ft)
         u.session.commit()
     
-    company = model.Company(
-        name="random company",
-        cik="0000000001",
-        sic=9000,
-        symbol="RANC",
-        description_="random description"
-    )
+    company = model.Company(**fake_company)
     with uow as u:
         u.company.add(company)
         u.commit()
@@ -330,7 +419,7 @@ def test_transient_model_object_requeried_in_subtransaction(get_bootstrapped_dil
                 last_update=None,
                 expiry=None,
                 total_amount_raised=None)
-            company1 = uow1.company.get("RANC")
+            company1 = uow1.company.get(fake_company["symbol"])
             uow1.session.expunge(company1)
             company1.add_shelf(shelf)
             
@@ -347,7 +436,7 @@ def test_transient_model_object_requeried_in_subtransaction(get_bootstrapped_dil
                 print(insp.dict, " dict")
                 print(insp.mapper, " mapper")
                 print(insp.object, " object")
-                company = uow2.company.get("RANC")
+                company = uow2.company.get(fake_company["symbol"])
                 shelf = uow2.session.merge(shelf)
                 company.add_shelf(shelf)
                 uow2.company.add(company)
@@ -359,18 +448,6 @@ def test_transient_model_object_requeried_in_subtransaction(get_bootstrapped_dil
 
 
 class TestHandlers():
-    def test_add_filing_link_with_missing_form_type(self, get_bootstrapped_dilution_db):
-        db = get_bootstrapped_dilution_db
-        add_example_company(db)
-        filing_link = model.FilingLink("https://anyrandomurl.com", "123456789123456789", "S-5", datetime.date(2022, 1, 1), "no descrption", "333-123123")
-        filing_link2 = model.FilingLink("https://anyrandomurl2.com", "123456789123456780","S-6", datetime.date(2022, 1, 1), "no descrption", "333-123123")
-        db.bus.handle(commands.AddFilingLinks("0000000001", "RANC", [filing_link, filing_link2]))
-        with db.uow as uow:
-            company = uow.company.get(symbol="RANC")
-            filing_htmls = [x.filing_html for x in company.filing_links]
-            for each in [filing_link, filing_link2]:
-                assert each.filing_html in filing_htmls
-
     def test_add_sic_(self,  get_bootstrapped_dilution_db):
         db = get_bootstrapped_dilution_db
         sic = model.Sic(9999, "unclassifiable_sector", "unclassifiable_industry", "unclassifiable_division")
@@ -381,6 +458,42 @@ class TestHandlers():
             result = uow.session.query(model.Sic).all()
             assert sic in result
 
+    def test_add_company(self, get_bootstrapped_dilution_db):
+        db = get_bootstrapped_dilution_db
+        sic = model.Sic(9000, "random sector", "random industry", "random divison")
+        uow = db.uow
+        with uow as u:
+            u.session.add(sic)
+            u.session.commit()
+        company = model.Company(**fake_company)
+        cmd = commands.AddCompany(company)
+        db.bus.handle(cmd)
+        with db.uow as uow:
+            received = uow.company.get(symbol=company.symbol)
+            assert received.name == company.name
+            assert received.cik == company.cik
+            assert received.sic == company.sic
+            assert received.symbol == company.symbol
+    
+    def test_add_securities(self, get_bootstrapped_dilution_db):
+        db = get_bootstrapped_dilution_db
+        add_example_company(db)
+        security = model.Security(**{
+            "name": "common stock",
+            "secu_attributes": model.CommonShare(name="common stock")
+        })
+        cmd = commands.AddSecurities(
+            fake_company["cik"],
+            fake_company["symbol"],
+            securities=[security])
+        db.bus.handle(cmd)
+        with db.uow as uow:
+            company = uow.company.get(fake_company["symbol"])
+            securities = company.securities
+            assert len(securities) == 1
+            for received in securities:
+                assert received.name == security.name
+    
     def test_add_shelf_registration(self, get_bootstrapped_dilution_db):
         db = get_bootstrapped_dilution_db
         add_example_company(db)
@@ -407,6 +520,80 @@ class TestHandlers():
             company = uow.company.get(symbol="RANC")
             assert shelf in company.shelfs
     
+    def test_add_resale_registration(self, get_bootstrapped_dilution_db):
+        db = get_bootstrapped_dilution_db
+        add_example_company(db)
+        with db.uow as uow:
+            uow.session.add(model.FormType("S-3", "whatever"))
+            uow.session.commit()
+        registration = model.ResaleRegistration(**fake_resale_registration)
+        db.bus.handle(commands.AddResaleRegistration(
+            cik=fake_company["cik"],
+            symbol=fake_company["symbol"],
+            resale_registration=registration
+        ))
+        with db.uow as uow:
+            received = uow.session.query(model.ResaleRegistration).first()
+            assert received.file_number == registration.file_number
+            assert received.accn == registration.accn
+    
+    def test_add_shelf_offering(self, get_bootstrapped_dilution_db):
+        db = get_bootstrapped_dilution_db
+        add_example_company(db)
+        with db.uow as uow:
+            shelf_offering = model.ShelfOffering(**fake_shelf_offering)
+        # create fake shelf offering dict
+        # create command
+        # handle through bus
+        # assert we added offering
+
+
+    def test_add_shelf_security_registration(self, get_bootstrapped_dilution_db):
+        db = get_bootstrapped_dilution_db
+        add_example_company(db)
+        with db.uow as uow:
+            shelf_registration = model.ShelfSecurityRegistration
+
+    def test_add_form_type(self, get_bootstrapped_dilution_db):
+        pass
+    
+    def test_effect_registration(self, get_bootstrapped_dilution_db):
+        pass
+
+    def test_add_outstanding_security_fact(self, get_bootstrapped_dilution_db):
+        pass
+    
+    def test_add_security_accn_occurence(self, get_bootstrapped_dilution_db):
+        db = get_bootstrapped_dilution_db
+        uow = db.uow
+        add_example_company(db)
+        add_example_common_stock(db)
+        db.create_filing_link(
+            **fake_filing_link
+        )
+        cmd = commands.AddSecurityAccnOccurence(
+            cik=fake_company["cik"],
+            symbol=fake_company["symbol"],
+            security_attributes={"name": fake_common_stock["name"]}
+        )
+        db.bus.handle(cmd)
+        with uow as u:
+            received = u.session.query(model.SecurityAccnOccurence).first()
+            assert received.security_id == 1
+            assert received.filing_accn == fake_filing_link["accn"]
+
+    def test_add_filing_link_with_missing_form_type(self, get_bootstrapped_dilution_db):
+        db = get_bootstrapped_dilution_db
+        add_example_company(db)
+        filing_link = model.FilingLink("https://anyrandomurl.com", "123456789123456789", "S-5", datetime.date(2022, 1, 1), "no descrption", "333-123123")
+        filing_link2 = model.FilingLink("https://anyrandomurl2.com", "123456789123456780","S-6", datetime.date(2022, 1, 1), "no descrption", "333-123123")
+        db.bus.handle(commands.AddFilingLinks("0000000001", "RANC", [filing_link, filing_link2]))
+        with db.uow as uow:
+            company = uow.company.get(symbol="RANC")
+            filing_htmls = [x.filing_html for x in company.filing_links]
+            for each in [filing_link, filing_link2]:
+                assert each.filing_html in filing_htmls
+
     def test_add_effect_registration(self, get_bootstrapped_dilution_db):
         db = get_bootstrapped_dilution_db
         add_example_company(db)

@@ -32,6 +32,21 @@ def get_dependency_attribute_matcher():
 
 # TODO: move to own test file
 class TestDependencyAttributeMatcher:
+    def test_match_simple_pattern_length_two(self, get_search, get_dependency_attribute_matcher):
+        search = get_search
+        text = "We sold 10000 shares of our common stock at a purchase price of 2$ per share."
+        doc = search.nlp(text)
+        pattern = [
+            {"RIGHT_ID": "one", "TOKEN": doc[0]},
+            {"LEFT_ID": "one", "REL_OP": "<", "RIGHT_ID": "two", "RIGHT_ATTRS": {"POS": "VERB"}}
+        ]
+        dep_getter = get_dependency_attribute_matcher
+        matches = dep_getter.get_candidate_matches(pattern)
+        assert len(matches) == 1
+        expected_tokens = [doc[0], doc[1]]
+        found_tokens = [i[0] for i in matches[0]]
+        assert expected_tokens == found_tokens
+
     def test_match_simple_pattern_one_child_per_level(self, get_search):
         search = get_search
         text = "This is a test sentence for detecting an exercise price."

@@ -5,6 +5,7 @@ from os import PathLike
 from pathlib import Path
 from abc import ABC
 
+
 @dataclass
 class Filing:
     path: str

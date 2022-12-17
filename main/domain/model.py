@@ -1,11 +1,12 @@
 from enum import Enum
 from types import NoneType
-from typing import Dict, List, Optional, Set, TypeAlias, TypeVar, Union
+from typing import Any, Dict, List, Optional, Set, TypeAlias, TypeVar, Union
 from typing_extensions import Self
 from pydantic import AnyUrl, Json, ValidationError, validator, BaseModel, root_validator
 from datetime import date, datetime, timedelta
 import logging
 from dataclasses import dataclass, field
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -255,7 +256,23 @@ class SecurityConversion:
     def __hash__(self):
         return hash((self.from_security, self.to_security))
 
+@dataclass
+class SecurityAccnOccurence:
+    security_id: int
+    accn: str
 
+    def __eq__(self, other):
+        if isinstance(other, SecurityAccnOccurence):
+            if (
+                (self.security_id == other.security_id) and
+                (self.accn == other.accn)
+            ):
+                return True
+        return False
+    
+    def __hash__(self):
+        return hash((self.security_id, self.accn))
+    
 
 @dataclass
 class ShelfSecurityRegistration:
@@ -712,10 +729,6 @@ class Company:
             if registration:
                 registration.effect_date = effect.effective_date
                 logger.debug(f"set effect_date: {effect.effective_date} for registration: {registration}")
-        
-
-
-
     
     def add_security(self, secu: Security):
         if (secu.underlying is not None) and (isinstance(secu.underlying, str)):
@@ -746,7 +759,23 @@ class Company:
     def add_security_authorized(self, authorized: SecurityAuthorized):
         if authorized not in self.securities_authorized:
             self.securities_authorized.add(authorized)
-        
+    
+    def get_security_by_attributes(self, attributes: dict[str, Any]):
+        '''returns first security matching attributes or None if no security has matching attributes'''
+        for secu in self.securities:
+            secu_attr_dict = json.loads(secu.security_attributes)
+            for attribute, value in attributes.items():
+                secu_attr_value = getattr(secu_attr_dict, attribute, None)
+                if secu_attr_value:
+                    if secu_attr_value == value:
+                        pass
+                    else:
+                        break
+                else:
+                    break
+            return secu
+        return None
+            
     def get_security_by_name(self, name):
         for secu in self.securities:
             if name == secu.name:

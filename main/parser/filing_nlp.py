@@ -20,25 +20,17 @@ from main.parser.filing_nlp_utils import (
 from main.parser.filing_nlp_certainty_setter import create_certainty_setter
 from main.parser.filing_nlp_negation_setter import create_negation_setter
 from main.parser.filing_nlp_dependency_matcher import (
-    SourceContext,
     SecurityDependencyAttributeMatcher,
 )
 from main.parser.filing_nlp_patterns import (
     add_anchor_pattern_to_patterns,
-    SECU_DATE_RELATION_PATTERNS_FROM_ROOT_VERB,
-    SECU_SECUQUANTITY_PATTERNS,
     SECU_EXERCISE_PRICE_PATTERNS,
     SECU_EXPIRY_PATTERNS,
     SECU_ENT_REGULAR_PATTERNS,
     SECU_ENT_DEPOSITARY_PATTERNS,
     SECU_ENT_SPECIAL_PATTERNS,
     SECUQUANTITY_ENT_PATTERNS,
-    SECU_DATE_RELATION_PATTERNS_FROM_ROOT_VERB,
-    SECU_DATE_RELATION_FROM_ROOT_VERB_CONTEXT_PATTERNS,
-    VERB_NEGATION_PATTERNS,
-    ADJ_NEGATION_PATTERNS,
-    SECU_GET_EXPIRY_DATE_LEMMA_COMBINATIONS,
-    SECU_GET_EXERCISE_DATE_LEMMA_COMBINATIONS,
+
 )
 from main.parser.filing_nlp_constants import (
     PLURAL_SINGULAR_SECU_TAIL_MAP,
@@ -594,17 +586,21 @@ class SECUObjectMapper:
         possible_source_quantities = self._secu_attr_getter.get_possible_source_quantities(secu.original)
         if possible_source_quantities:
             for incomplete_source_quantity in possible_source_quantities:
+                print(incomplete_source_quantity)
                 quantity_relation = doc._.quantity_relation_map.get(incomplete_source_quantity.i, None)
                 if quantity_relation is not None:
                     if quantity_relation.main_secu != secu:
-                        source_context: SourceContext = self._secu_attr_getter._get_source_secu_context_through_secuquantity(incomplete_source_quantity)
-                        if source_context is None:
-                            logger.warning(f"couldnt establish a source_context for this source_quantity_relation: {incomplete_source_quantity, quantity_relation}")
-                        source_quantity_relation = SourceQuantityRelation(source_context, quantity_relation.quantity, quantity_relation.main_secu, source_secu=secu)
+                        # logger.warning((incomplete_source_quantity, "<- incomplete source quantity"))
+                        # TODO[epic=important]: how can i include varying contexts between source and target security?
+                        # source_context: SourceContext = self._secu_attr_getter._get_source_secu_context_through_secuquantity(incomplete_source_quantity)
+                        # if source_context is None:
+                        #     logger.warning(f"couldnt establish a source_context for this source_quantity_relation: {incomplete_source_quantity, quantity_relation}")
+                        source_quantity_relation = SourceQuantityRelation(quantity_relation.quantity, quantity_relation.main_secu, source_secu=secu)
                         yield source_quantity_relation
         yield None
     
     def __call__(self, doc: Doc):
+        # TODO[epic=maybe]: maybe add a map of SECU objects to sent indices so we can create a map of context for sents and therefor a context to SECU map?
         self.create_secu_objects(doc)
         self.set_quantity_relation_map(doc)
         self.handle_source_quantity_relations(doc)
@@ -1204,25 +1200,6 @@ class SpacyFilingTextSearch:
             # cls._instance.nlp.add_pipe("coreferee")
         return cls._instance
     
-    # TODO[epic=maybe]: maybe add a map of SECU objects to sent indices so we can create a map of context for sents and therefor a context to SECU map?
-
-    def get_SECU_objects(self, doc: Doc) -> dict[str, list[SECU]]:
-        if not self.nlp.has_pipe("secu_matcher"):
-            raise AttributeError(
-                "SECUMatcher not added to pipeline. Please add it with nlp.add_pipe('secu_matcher')"
-            )
-        if not self.nlp.has_pipe("secuquantity_matcher"):
-            raise AttributeError(
-                "SECUQuantityMatcher not added to pipeline. Please add it with nlp.add_pipe('secuquantity_matcher')"
-            )
-        secus = defaultdict(list)
-        for secu in doc._.secus:
-            if len(secu) == 1:
-                secu = secu[0]
-            secu_obj = SECU(secu, self.secu_attr_getter)
-            secus[secu_obj.secu_key].append(secu_obj)
-        # TODO: resolve source_secu relations here after we have all SECUs in the doc?
-        return secus
 
     def handle_match_formatting(
         self,

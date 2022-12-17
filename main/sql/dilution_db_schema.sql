@@ -207,6 +207,7 @@ CREATE TABLE IF NOT EXISTS filing_links(
     file_number VARCHAR(1000),
 
     CONSTRAINT unique_filing_html UNIQUE(filing_html),
+    CONSTRAINT unique_accn_in_filing_links UNIQUE(accn),
 
     CONSTRAINT fk_company_id
         FOREIGN KEY (company_id)
@@ -343,6 +344,21 @@ CREATE TABLE IF NOT EXISTS securities (
             REFERENCES securities(id),
     CONSTRAINT unique_name_company_type
         UNIQUE(company_id, security_name, security_type)
+);
+
+CREATE TABLE IF NOT EXISTS securities_accn_occurence (
+    id SERIAL PRIMARY KEY,
+    security_id INTEGER,
+    accn VARCHAR,
+
+    CONSTRAINT unique_occurence UNIQUE(security_id, accn),
+
+    CONSTRAINT fk_security_id
+        FOREIGN KEY (security_id)
+            REFERENCES securities(id),
+    CONSTRAINT fk_accn
+        FOREIGN KEY (accn)
+            REFERENCES filing_links(accn)
 );
 
 CREATE TABLE IF NOT EXISTS securities_cusip(

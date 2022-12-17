@@ -95,7 +95,7 @@ MODALITY_CERTAINTY_MARKER_DEPENDENCY_PATTERNS = [
 
 class CertaintySetter:
     '''
-    sets a CertaintyInfo class on each Token that needs it on the extension ._.certainty
+    sets a CertaintyInfo class on each Token that needs it on the extension ._.certainty_info
     sets extension if not set yet: 
         ._.certainty_info
         ._.certainty_marker_map
@@ -131,7 +131,7 @@ class CertaintySetter:
 
 
 def on_certainty_marker_match(matcher: DependencyMatcher, doc: Doc, i: int, matches) -> None:
-    match_id, token_idxs = matches[i]
+    _, token_idxs = matches[i]
     certainty_marker_idx = token_idxs[0]
     affected_main_verb = doc[token_idxs[1]]
     scope = [t.i for t in affected_main_verb.subtree]

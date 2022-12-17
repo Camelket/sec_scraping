@@ -18,6 +18,7 @@ from main.parser.filing_nlp_utils import (
 )
 from main.parser.filing_nlp_dateful_relations import DatetimeRelation
 from main.parser.filing_nlp_patterns import (
+    AT_CONTEXT_UNIT_TAIL_PATTERNS,
     add_anchor_pattern_to_patterns,
     SECU_DATE_RELATION_PATTERNS_FROM_ROOT_VERB,
     SECU_SECUQUANTITY_PATTERNS,
@@ -25,6 +26,7 @@ from main.parser.filing_nlp_patterns import (
     SECU_DATE_RELATION_PATTERNS_FROM_ROOT_VERB,
     SECU_DATE_RELATION_FROM_ROOT_VERB_CONTEXT_PATTERNS,
     SECU_EXERCISE_PRICE_PATTERNS,
+    PARENT_VERB_AT_CONTEXT,
 )
 
 formater = MatchFormater()
@@ -288,10 +290,35 @@ class DependencyAttributeMatcher:
 class SecurityDependencyAttributeMatcher(DependencyAttributeMatcher):
     def __init__(self):
         super().__init__()
+    
+    def _get_at_context(self, parent_verb: Token):
+        # example: we sold 10000 shares of our common stock [at a purchase price of 2 $ per share] will match things in bracket.
+        core_anchor_pattern = self._get_anchor_pattern(parent_verb)
+        complete_core_patterns = add_anchor_pattern_to_patterns(
+            core_anchor_pattern, PARENT_VERB_AT_CONTEXT
+        )
+        result = []
+        matches = self.run_patterns_for_match(complete_core_patterns)
+        if matches:
+            for match in matches:
+                result.append(match)
+        for r in result:
+            tail_anchor_pattern = self._get_anchor_pattern(r[-2][0])
+            complete_tail_patterns = add_anchor_pattern_to_patterns(
+                tail_anchor_pattern, AT_CONTEXT_UNIT_TAIL_PATTERNS
+            )
+            tail_matches = self.run_patterns_for_match(complete_tail_patterns)
+            if tail_matches:
+                if len(tail_matches) == 1:
+                    for x in tail_matches[0][1:]:
+                        r.append(x)
+        return result
 
-    def _filter_negated(self, args):
-        # TODO: can this be done as simple as checking ._.negated on the main verb/adj ?
-        pass
+        
+
+    # def _filter_negated(self, args):
+    #     # TODO: can this be done as simple as checking ._.negated on the main verb/adj ?
+    #     pass
 
     # TODO: is get_exercise_price and get_expiry_date in the correct location here, or should it be moved to either SECU or somewhere else?
     # eg in a class that handles the information of date_relation and quantities to form a definitv object (eg: exercise_price with date, expiry ect)
@@ -457,7 +484,10 @@ class SecurityDependencyAttributeMatcher(DependencyAttributeMatcher):
     def _get_source_secu_context_through_secuquantity(
         self, token: Token
     ) -> SourceContext | None:
-        # pattern: secuquantity -> unit_word ->> context_word -> upon -> (the) -> action_word -> of -> pobj SECU
+        '''
+        currently not usable as the context is so variable i need a different approach than below.
+        '''
+        # context, sconj, action pattern: secuquantity -> unit_word ->> context_word -> upon -> (the) -> action_word -> of -> pobj SECU
         # TODO[epic=maybe]: make this pattern more specific by adding the source into the pattern since we look for context from the source secu anyhow 
         if token.ent_type_ != "SECUQUANTITY":
             return None
@@ -482,6 +512,11 @@ class SecurityDependencyAttributeMatcher(DependencyAttributeMatcher):
         return None
 
     def _get_context_sconj_action_from_secuquantity(self, secuquantity: Token):
+        '''
+        example sentence: Includes 7,111,112 shares of common stock that may be issued upon the exercise of warrants.
+        secuquantity is: 7,111,112
+        context would be: context="issued", sconj="upon", action="exercise", source_secu="warrants"
+        '''
         result = []
         if secuquantity.head:
             if secuquantity.head.lower_ in SECUQUANTITY_UNITS:

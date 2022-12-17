@@ -122,17 +122,28 @@ class QuantityRelation:
         if (self.quantity == other.quantity) and (self.main_secu == other.main_secu):
             return True
         return False
+    
+    def fulfills_conditions(self, is_negated=False, has_datetime_relation=True, min_certainty=0.85, certainty_fallback=1.0, has_parent_verb=True):
+        if self.quantity.original._.negated is is_negated:
+            if (True if self.quantity.datetime_relation else False) is has_datetime_relation:
+                certainty = certainty_fallback
+                if (True if self.quantity.parent_verb else False) is has_parent_verb:
+                    if self.quantity.parent_verb:
+                        if self.quantity.parent_verb._.certainty_info:
+                            certainty = self.quantity.parent_verb._.certainty_info.determine_level()
+                    if certainty >= min_certainty:
+                        return True
+        return False
 
 class SourceQuantityRelation():
-    def __init__(self, context: SourceContext, quantity: SECUQuantity, target_secu: Any, source_secu: Any):
-        self.quantity = quantity
-        self.target_secu = target_secu
-        self.source_secu = source_secu
-        self.context = context
+    def __init__(self, quantity: SECUQuantity, target_secu: Any, source_secu: Any):
+        self.quantity: SECUQuantity = quantity
+        self.target_secu: SECU = target_secu
+        self.source_secu: SECU = source_secu
         self.rel_type = "source_quantity"
 
     def __repr__(self):
-        return f"SourceQuantityRelation({self.quantity} {self.target_secu} from {self.context.source})"
+        return f"SourceQuantityRelation({self.quantity.amount} {self.target_secu.secu_key} from {self.source_secu.secu_key})"
 
 
 # TODO: handle and give better error message for failing to extend datetime root token to full span (eg out of bounds nanosecond timestamp)
@@ -144,6 +155,7 @@ class SECU:
         self.attr_matcher: SecurityDependencyAttributeMatcher = attr_matcher
         self.secu_key: str = original._.secu_key
         self.amods = original._.amods
+        self.adj = original._.adj
         self.other_relations: list = list()
         self.quantity_relations: list[QuantityRelation] = list()
         self._set_quantity_relations()
@@ -158,7 +170,41 @@ class SECU:
         self.expiry_date = self._get_expiry_datetime_relation()
         self.exercise_date = self._get_exercise_datetime_relation()
         # TODO: maybe add securitytype through the factory with secu_key?
-
+    
+    def get_outstanding_quantity_relations(self) -> list[QuantityRelation]|None:
+        '''
+        check the quantity_relations instance variable for a relation meeting the criteria for
+        an outstanding security quantity.
+        criteria are:
+            - "outstanding" in amods
+            - has a datetime relation
+            - certainty above 0.85
+            - not negated
+        '''
+        if self.amods:
+            str_amods = [i.lower_ for i in self.amods]
+        else:
+            str_amods = []
+        result = []
+        for qr in self.quantity_relations:
+            if qr.fulfills_conditions(
+                is_negated=False,
+                has_datetime_relation=True,
+                min_certainty=0.85,
+                certainty_fallback=1.0,
+                has_parent_verb=True
+            ):
+                quant = qr.quantity
+                if quant.amods is not None:
+                    amods = [i.lower_ for i in quant.amods] + str_amods
+                else:
+                    amods = str_amods
+                if ("outstanding" in amods):
+                    if quant.amount.amount is not None:
+                        result.append(qr)
+        return result if result != [] else None
+                                    
+    
     def _date_relation_attr_with_subset_of_pattern(
         self, valid_patterns: list[dict[str, set]], attr: str = "lemmas"
     ):

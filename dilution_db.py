@@ -43,6 +43,7 @@ logging.basicConfig(level=logging.INFO)
 
 
 '''
+THIS IS OUTDATED AS OF 10.11.22 (TODO: NEEDS REWRITE)
 To add a new .htm Form to the parsing pipeline:
     in parsers.py:
     1) Add a new entry to the filing_factory_default
@@ -81,9 +82,6 @@ quick overview of the main classes involved in the parsing pipeline:
         Used to transform a raw filing into a Filing
     Extractors:
         extract values from a Filing and create FilingValues 
-    Uploader: 
-        Callable that takes a single FilingValue as an argument
-        and handles the update in the database
     Factories:
         used so we can more easily organise and avoid if/else jungle.
         There might be a better solution.

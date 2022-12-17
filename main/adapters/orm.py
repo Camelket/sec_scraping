@@ -25,6 +25,7 @@ from main.domain.model import (
     SecurityCusip,
     FormType,
     Security,
+    SecurityAccnOccurence,
     SecurityConversion,
     SecurityOutstanding,
     SecurityAuthorized,
@@ -45,6 +46,9 @@ from main.domain.model import (
     NetCashAndEquivalents,
     Company
 )
+
+import logging
+logger = logging.getLogger(__name__)
 
 class SecurityTypes(types.TypeDecorator):
     impl = types.String
@@ -98,6 +102,14 @@ securities = Table(
     Column("security_type", SecurityTypes),
     Column("underlying_security_id", ForeignKey("securities.id")),
     Column("security_attributes", JSON)
+)
+
+securities_accn_occurence = Table(
+    "securities_accn_occurence",
+    reg.metadata,
+    Column("id", Integer, primary_key=True),
+    Column("security_id", ForeignKey("securities.id")),
+    Column("accn", ForeignKey("filing_links.accn"))
 )
 
 securities_conversion = Table(
@@ -321,6 +333,7 @@ companies = Table(
 )
 
 def start_mappers():
+    logger.debug(f"Creating mappers for sqlalchemy model...")
     underwriters_mapper = reg.map_imperatively(
         Underwriter,
         underwriters,
@@ -385,6 +398,11 @@ def start_mappers():
                 lazy="joined"
             )
         }
+    )
+
+    securities_accn_occurence_mapper = reg.map_imperatively(
+        SecurityAccnOccurence,
+        securities_accn_occurence
     )
 
     securities_conversion_mapper = reg.map_imperatively(

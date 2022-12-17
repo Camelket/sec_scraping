@@ -917,6 +917,32 @@ SECU_SOURCE_SECU_SECUQUANTITY_PATTERNS = [
             "RIGHT_ATTRS": {"ENT_TYPE": "SECUQUANTITY"}
         }
     ],
+    [ # eg: As of April 20, 2022, we had[v2] warrants[anchor] outstanding to issue[verb1] 20000[secuquantity] shares[secuquantity_unit] of common stock
+        {
+            "LEFT_ID": "anchor",
+            "REL_OP": "<",
+            "RIGHT_ID": "v2",
+            "RIGHT_ATTRS": {"POS": "VERB", "LEMMA": {"IN": ["have", "will", "be", "can"]}}, 
+        },
+        {
+            "LEFT_ID": "v2",
+            "REL_OP": ">",
+            "RIGHT_ID": "verb1",
+            "RIGHT_ATTRS": {"POS": "VERB", "DEP": "xcomp", "LEMMA": {"NOT_IN": ["have", "will", "be", "can"]}}, 
+        },
+        {
+            "LEFT_ID": "verb1",
+            "REL_OP": ">",
+            "RIGHT_ID": "secuquantity_unit",
+            "RIGHT_ATTRS": {"LOWER": {"IN": SECUQUANTITY_UNITS}}
+        },
+        {
+            "LEFT_ID": "secuquantity_unit",
+            "REL_OP": ">",
+            "RIGHT_ID": "secuquantity",
+            "RIGHT_ATTRS": {"ENT_TYPE": "SECUQUANTITY"}
+        }
+    ],
     [
         {
             "LEFT_ID": "anchor",
@@ -1018,6 +1044,193 @@ SECU_GET_EXERCISE_DATE_LEMMA_COMBINATIONS = [
         "prep": set(["as", "of", "on"]),
         "aux_verb": set(["can", "be"]),
     }
+]
+
+AT_CONTEXT_UNIT_TAIL_PATTERNS = [
+    [
+        {
+            "LEFT_ID": "anchor",
+            "REL_OP": ">",
+            "RIGHT_ID": "prep_unit",
+            "RIGHT_ATTRS": {"DEP": "prep"}
+            # "RIGHT_ATTRS": {"LOWER": "per"}, 
+        },
+        {
+            "LEFT_ID": "prep_unit",
+            "REL_OP": ">",
+            "RIGHT_ID": "noun_unit",
+            "RIGHT_ATTRS": {"DEP": "pobj"}, # POS NOUN
+            # "RIGHT_ATTRS": {"LOWER": "share"} 
+        },
+    ]
+]
+
+PARENT_VERB_AT_CONTEXT = [
+    # anchor should be the parent/root verb of a secu/sentence
+    [
+       {
+            "LEFT_ID": "anchor",
+            "REL_OP": ">",
+            "RIGHT_ID": "at",
+            "RIGHT_ATTRS": {"POS": "ADP", "LOWER": "at", "DEP": "prep"}, 
+        },
+        {
+            "LEFT_ID": "at",
+            "REL_OP": ">",
+            "RIGHT_ID": "price",
+            "RIGHT_ATTRS": {"LOWER": "price"}, 
+        },
+        {
+            "LEFT_ID": "price",
+            "REL_OP": ">",
+            "RIGHT_ID": "det",
+            "RIGHT_ATTRS": {"POS": "DET"}, 
+        },
+        {
+            "LEFT_ID": "price",
+            "REL_OP": ">",
+            "RIGHT_ID": "of",
+            "RIGHT_ATTRS": {"LOWER": "of"}, 
+        },
+        {
+            "LEFT_ID": "of",
+            "REL_OP": ">",
+            "RIGHT_ID": "symbol",
+            "RIGHT_ATTRS": {"DEP": "pobj", "POS": "SYM"}, 
+        },
+        {
+            "LEFT_ID": "symbol",
+            "REL_OP": ">",
+            "RIGHT_ID": "price_per_unit",
+            "RIGHT_ATTRS": {"POS": "NUM", "DEP": {"IN": ["nmod", "nummod"]}}, 
+        }
+    ],
+    [ # On April 20, 2022, we issued 10000 shares of our common stock at a price of 2$ per share.
+       {
+            "LEFT_ID": "anchor",
+            "REL_OP": ">",
+            "RIGHT_ID": "at",
+            "RIGHT_ATTRS": {"POS": "ADP", "LOWER": "at", "DEP": "prep"}, 
+        },
+        {
+            "LEFT_ID": "at",
+            "REL_OP": ">",
+            "RIGHT_ID": "price",
+            "RIGHT_ATTRS": {"LOWER": "price"}, 
+        },
+        {
+            "LEFT_ID": "price",
+            "REL_OP": ">",
+            "RIGHT_ID": "det",
+            "RIGHT_ATTRS": {"POS": "DET"}, 
+        },
+        {
+            "LEFT_ID": "price",
+            "REL_OP": ">",
+            "RIGHT_ID": "noun",
+            "RIGHT_ATTRS": {"POS": "NOUN", "DEP": "commpound"}, 
+        },
+        {
+            "LEFT_ID": "price",
+            "REL_OP": ">",
+            "RIGHT_ID": "of",
+            "RIGHT_ATTRS": {"LOWER": "of"}, 
+        },
+        {
+            "LEFT_ID": "of",
+            "REL_OP": ">",
+            "RIGHT_ID": "symbol",
+            "RIGHT_ATTRS": {"DEP": "pobj", "POS": "SYM"}, 
+        },
+        {
+            "LEFT_ID": "symbol",
+            "REL_OP": ">",
+            "RIGHT_ID": "price_per_unit",
+            "RIGHT_ATTRS": {"POS": "NUM", "DEP": {"IN": ["nmod", "nummod"]}}, 
+        }
+    ],
+    [
+       {
+            "LEFT_ID": "anchor",
+            "REL_OP": ">",
+            "RIGHT_ID": "at",
+            "RIGHT_ATTRS": {"POS": "ADP", "LOWER": "at", "DEP": "prep"}, 
+        },
+        {
+            "LEFT_ID": "at",
+            "REL_OP": ">",
+            "RIGHT_ID": "price",
+            "RIGHT_ATTRS": {"LOWER": "price"}, 
+        },
+        {
+            "LEFT_ID": "price",
+            "REL_OP": ">",
+            "RIGHT_ID": "det",
+            "RIGHT_ATTRS": {"POS": "DET"}, 
+        },
+        {
+            "LEFT_ID": "price",
+            "REL_OP": ">",
+            "RIGHT_ID": "of",
+            "RIGHT_ATTRS": {"LOWER": "of"}, 
+        },
+        {
+            "LEFT_ID": "of",
+            "REL_OP": ">",
+            "RIGHT_ID": "price_per_unit",
+            "RIGHT_ATTRS": {"DEP": "pobj", "POS": "NUM"}, 
+        },
+        {
+            "LEFT_ID": "price_per_unit",
+            "REL_OP": ">",
+            "RIGHT_ID": "symbol",
+            "RIGHT_ATTRS": {"POS": "SYM", "DEP": {"IN": ["nmod", "nummod"]}}, 
+        }
+    ],
+    [ # On April 20, 2022, we issued 10000 shares of our common stock at a price of 2$ per share.
+       {
+            "LEFT_ID": "anchor",
+            "REL_OP": ">",
+            "RIGHT_ID": "at",
+            "RIGHT_ATTRS": {"POS": "ADP", "LOWER": "at", "DEP": "prep"}, 
+        },
+        {
+            "LEFT_ID": "at",
+            "REL_OP": ">",
+            "RIGHT_ID": "price",
+            "RIGHT_ATTRS": {"LOWER": "price"}, 
+        },
+        {
+            "LEFT_ID": "price",
+            "REL_OP": ">",
+            "RIGHT_ID": "det",
+            "RIGHT_ATTRS": {"POS": "DET"}, 
+        },
+        {
+            "LEFT_ID": "price",
+            "REL_OP": ">",
+            "RIGHT_ID": "noun",
+            "RIGHT_ATTRS": {"POS": "NOUN", "DEP": "commpound"}, 
+        },
+        {
+            "LEFT_ID": "price",
+            "REL_OP": ">",
+            "RIGHT_ID": "of",
+            "RIGHT_ATTRS": {"LOWER": "of"}, 
+        },
+        {
+            "LEFT_ID": "of",
+            "REL_OP": ">",
+            "RIGHT_ID": "price_per_unit",
+            "RIGHT_ATTRS": {"DEP": "pobj", "POS": "NUM"}, 
+        },
+        {
+            "LEFT_ID": "price_per_unit",
+            "REL_OP": ">",
+            "RIGHT_ID": "symbol",
+            "RIGHT_ATTRS": {"POS": "SYM", "DEP": {"IN": ["nmod", "nummod"]}}, 
+        }
+    ]
 ]
 
         
