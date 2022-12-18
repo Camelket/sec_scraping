@@ -67,6 +67,17 @@ def add_securities(cmd: commands.AddSecurities, uow: AbstractUnitOfWork):
         u.company.add(company)
         u.commit()
 
+def add_resale_registration(cmd: commands.AddResaleRegistration, uow: AbstractUnitOfWork):
+    with uow as u:
+        company: model.Company = u.company.get(symbol=cmd.symbol, lazy=True)
+        local_resale_object = u.session.merge(cmd.resale_registration)
+        local_resale_object.company_id = company.id
+        with u.session.no_autoflush:
+            company.add_resale(local_resale_object)
+        # company.add_resale(cmd.resale_registration)
+        u.company.add(company)
+        u.commit()
+
 def add_shelf_registration(cmd: commands.AddShelfRegistration, uow: AbstractUnitOfWork):
     with uow as u:
         company: model.Company = u.company.get(symbol=cmd.symbol, lazy=True)
@@ -78,16 +89,18 @@ def add_shelf_registration(cmd: commands.AddShelfRegistration, uow: AbstractUnit
         u.company.add(company)
         u.commit()
 
-def add_resale_registration(cmd: commands.AddResaleRegistration, uow: AbstractUnitOfWork):
+def add_shelf_offering(cmd: commands.AddShelfOffering, uow: AbstractUnitOfWork):
     with uow as u:
         company: model.Company = u.company.get(symbol=cmd.symbol, lazy=True)
-        local_resale_object = u.session.merge(cmd.resale_registration)
-        local_resale_object.company_id = company.id
-        with u.session.no_autoflush:
-            company.add_resale(local_resale_object)
-        # company.add_resale(cmd.resale_registration)
-        u.company.add(company)
-        u.commit()
+        shelf: model.ShelfRegistration = company.get_shelf_by_accn(cmd.shelf_offering.accn)
+        if shelf:
+            local_shelf_offering = u.session.merge(cmd.shelf_offering)
+            with u.session.no_autoflush:
+                shelf.add_offering(local_shelf_offering)
+            u.company.add(company)
+            u.commit()
+        else:
+            logger.info(f"Couldnt add ShelfOffering, no ShelfRegistration found for accn: {cmd.shelf_offering.accn}")
 
 def add_shelf_security_registration(cmd: commands.AddShelfSecurityRegistration, uow: AbstractUnitOfWork):
     with uow as u:
@@ -117,9 +130,10 @@ def add_outstanding_security_fact(cmd: commands.AddOutstandingSecurityFact, uow:
         company: model.Company = u.company.get(symbol=cmd.symbol)
         security: model.Security = company.get_security_by_name(cmd.name)
         if security:
-            local_outstanding = u.session.merge(cmd.outstanding)
-            with u.session.no_autoflush:
-                security.add_outstanding(local_outstanding)
+            for outstanding in cmd.outstanding:
+                local_outstanding = u.session.merge(outstanding)
+                with u.session.no_autoflush:
+                    security.add_outstanding(local_outstanding)
             u.company.add(company)
             u.commit()
         else:
@@ -142,6 +156,7 @@ COMMAND_HANDLERS = {
     commands.AddShelfRegistration: add_shelf_registration,
     commands.AddResaleRegistration: add_resale_registration,
     commands.AddShelfSecurityRegistration: add_shelf_security_registration,
+    commands.AddShelfOffering: add_shelf_offering,
 
     commands.AddSic: add_sic,
     commands.AddFormType: add_form_type,

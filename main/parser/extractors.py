@@ -587,7 +587,7 @@ class HTMS3Extractor(BaseHTMExtractor, AbstractFilingExtractor):
         offering = company.get_shelf_offering(filing.accession_number)
         cmd = commands.AddShelfSecurityRegistration(filing.cik, company.symbol, filing.accession_number, security_registration=security_registration)
         bus.handle(cmd)
-        offering.add_registration(security_registration)
+        # offering.add_registration(security_registration)
     
     def get_ATM_security_registrations(self, filing: Filing, company: model.Company, cover_page: Doc):
         registrations = []
@@ -633,15 +633,6 @@ class HTMS3Extractor(BaseHTMExtractor, AbstractFilingExtractor):
                     pass # need to write get_secu_conversion first
         return conversions
 
-                
-
-
-            # iter through sections and get attributes then merge attributes
-            # stop as soon as attributes have all None values
-
-        # look in descrption of capital stock and cover page
-        # 
-        #WIP
 
     def classify_s3(self, filing: Filing):
         front_page = filing.get_section(re.compile("front page"))

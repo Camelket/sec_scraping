@@ -51,27 +51,31 @@ fake_shelf_registration = {
     "accn":"000143774918017591",
     "file_number": "1",
     "form_type": "S-3",
-    "capacity": 10000
+    "capacity": 10000,
+    "filing_date": datetime.date(2018, 9, 29)
 }
 
 
 fake_resale_registration = {
     "accn": "000143774918017592",
-    "file_number": 2,
+    "file_number": "2",
     "form_type": "S-3",
     "filing_date": datetime.date(2018, 9, 29),
-    "effect_date": None,
-    "last_update": None,
-    "expiry": None,
-    "total_amount_raised": None
 }
 
 fake_shelf_offering = {
     "offering_type": "ATM",
-    "accn": "000143774918017592",
+    "accn": "000143774918017591",
     "anticipated_offering_amount": 5000,
     "commencment_date": datetime.date(2018, 10, 1),
     "end_date": datetime.date(2021, 10, 1)
+}
+
+fake_effect_registration = {
+    "accn": "000143774918017591",
+    "file_number": "2",
+    "form_type": "S-3",
+    "effective_date": datetime.date(2018, 10, 2)
 }
 
 company_data = {
@@ -233,6 +237,25 @@ def add_example_common_stock(db: DilutionDB):
         company.add_security(
             model.Security(**fake_common_stock))
         u.commit()
+
+def add_example_form_type(db: DilutionDB, form_type: str):
+    db.bus.handle(
+        commands.AddFormType(
+            model.FormType(
+                form_type,
+                "any"
+            )
+        )
+    )
+
+def add_example_shelf_registration(db: DilutionDB):
+    registration = model.ShelfRegistration(**fake_shelf_registration)
+    db.bus.handle(commands.AddShelfRegistration(
+        cik=fake_company["cik"],
+        symbol=fake_company["symbol"],
+        shelf_registration=registration
+        ))
+        
     
 def test_connect(get_session):
     session = get_session
@@ -497,35 +520,21 @@ class TestHandlers():
     def test_add_shelf_registration(self, get_bootstrapped_dilution_db):
         db = get_bootstrapped_dilution_db
         add_example_company(db)
-        with db.uow as uow:
-            uow.session.add(model.FormType("S-3", "whatever"))
-            uow.session.commit()
-        shelf = model.ShelfRegistration(
-                accn='000143774918017591',
-                file_number='1',
-                form_type='S-3',
-                capacity=75000000.0,
-                filing_date=datetime.date(2018, 9, 28),
-                effect_date=None,
-                last_update=None,
-                expiry=None,
-                total_amount_raised=None
-            )
+        add_example_form_type(db, fake_shelf_registration["form_type"])
+        shelf = model.ShelfRegistration(**fake_shelf_registration)
         db.bus.handle(commands.AddShelfRegistration(
-            cik="0000000001",
-            symbol="RANC",
+            cik=fake_company["cik"],
+            symbol=fake_company["symbol"],
             shelf_registration=shelf
         ))
         with db.uow as uow:
-            company = uow.company.get(symbol="RANC")
+            company = uow.company.get(symbol=fake_company["symbol"])
             assert shelf in company.shelfs
     
     def test_add_resale_registration(self, get_bootstrapped_dilution_db):
         db = get_bootstrapped_dilution_db
         add_example_company(db)
-        with db.uow as uow:
-            uow.session.add(model.FormType("S-3", "whatever"))
-            uow.session.commit()
+        add_example_form_type(db, fake_resale_registration["form_type"])
         registration = model.ResaleRegistration(**fake_resale_registration)
         db.bus.handle(commands.AddResaleRegistration(
             cik=fake_company["cik"],
@@ -540,12 +549,18 @@ class TestHandlers():
     def test_add_shelf_offering(self, get_bootstrapped_dilution_db):
         db = get_bootstrapped_dilution_db
         add_example_company(db)
+        add_example_form_type(db, fake_shelf_registration["form_type"])
+        add_example_shelf_registration(db)
+        shelf_offering = model.ShelfOffering(**fake_shelf_offering)
+        cmd = commands.AddShelfOffering(
+            cik=fake_company["cik"],
+            symbol=fake_company["symbol"],
+            shelf_offering=shelf_offering
+        )
+        db.bus.handle(cmd)
         with db.uow as uow:
-            shelf_offering = model.ShelfOffering(**fake_shelf_offering)
-        # create fake shelf offering dict
-        # create command
-        # handle through bus
-        # assert we added offering
+            received = uow.session.query(model.ShelfOffering).first()
+            assert received.accn == shelf_offering.accn
 
 
     def test_add_shelf_security_registration(self, get_bootstrapped_dilution_db):
@@ -553,15 +568,65 @@ class TestHandlers():
         add_example_company(db)
         with db.uow as uow:
             shelf_registration = model.ShelfSecurityRegistration
+            # needs base implementation first
+            print("ignore failure of test until base implementation is done")
+            assert 1 == 2
+
 
     def test_add_form_type(self, get_bootstrapped_dilution_db):
-        pass
+        db = get_bootstrapped_dilution_db
+        form_type = model.FormType(
+            form_type="test_form_type",
+            category="whatever"
+            )
+        cmd = commands.AddFormType(form_type)
+        db.bus.handle(cmd)
+        with db.uow as uow:
+            received = uow.session.query(model.FormType).all()
+            print(received)
+            for form_type in received:
+                if form_type.form_type == "test_form_type":
+                    assert form_type.category =="whatever"
+                    return
+                else:
+                    continue
+            print("failed to add form type")
+            assert 1 == 2
     
-    def test_effect_registration(self, get_bootstrapped_dilution_db):
-        pass
+    def test_add_effect_registration(self, get_bootstrapped_dilution_db):
+        db = get_bootstrapped_dilution_db
+        add_example_company(db)
+        add_example_common_stock(db)
+        add_example_shelf_registration(db)
+        effect = model.EffectRegistration(**fake_effect_registration)
+        cmd = commands.AddEffectRegistration(
+            fake_company["cik"],
+            fake_company["symbol"],
+            effect
+        )
+        db.bus.handle(cmd)
+        with db.uow as uow:
+            received = uow.session.query(model.EffectRegistration).first()
+            assert received.accn == effect.accn
+            assert received.file_number == effect.file_number
+            assert received.effective_date == effect.effective_date
 
     def test_add_outstanding_security_fact(self, get_bootstrapped_dilution_db):
-        pass
+        db = get_bootstrapped_dilution_db
+        add_example_company(db)
+        add_example_common_stock(db)
+        outstanding = model.SecurityOutstanding(10000, datetime.date(2020, 1, 1))
+        cmd = commands.AddOutstandingSecurityFact(
+            fake_company["cik"],
+            fake_company["symbol"],
+            "common stock",
+            [outstanding]
+        )
+        db.bus.handle(cmd)
+        with db.uow as uow:
+            received = uow.session.query(model.SecurityOutstanding).first()
+            assert received.amount == outstanding.amount
+            assert received.instant == outstanding.instant
     
     def test_add_security_accn_occurence(self, get_bootstrapped_dilution_db):
         db = get_bootstrapped_dilution_db
@@ -574,13 +639,14 @@ class TestHandlers():
         cmd = commands.AddSecurityAccnOccurence(
             cik=fake_company["cik"],
             symbol=fake_company["symbol"],
-            security_attributes={"name": fake_common_stock["name"]}
+            security_attributes={"name": fake_common_stock["name"]},
+            filing_accn=fake_filing_link["accn"]
         )
         db.bus.handle(cmd)
         with uow as u:
             received = u.session.query(model.SecurityAccnOccurence).first()
             assert received.security_id == 1
-            assert received.filing_accn == fake_filing_link["accn"]
+            assert received.accn == fake_filing_link["accn"]
 
     def test_add_filing_link_with_missing_form_type(self, get_bootstrapped_dilution_db):
         db = get_bootstrapped_dilution_db

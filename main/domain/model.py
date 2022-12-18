@@ -677,6 +677,12 @@ class Company:
                 return s
         return None
     
+    def get_shelf_by_accn(self, accn: str):
+        for shelf in self.shelfs:
+            if shelf.accn == accn:
+                return shelf
+        return None
+
     def get_shelf(self, file_number: str):
         for shelf in self.shelfs:
             if shelf.file_number == file_number:
