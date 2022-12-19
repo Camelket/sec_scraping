@@ -992,6 +992,7 @@ class HTMFilingParser(AbstractFilingParser):
             2) sort into mainheader(all caps) and subheader(not all caps)
             3) if we dont have a lot of mainheaders try and sort by font-size/size
                mostlikely need to check if parents have that property
+               [NOT IMPLEMENTED]
             4) assign subheaders based on position relative to mainheaders
                eg: subheaders between two mainheaders are assigned to the earlier
                mainheader

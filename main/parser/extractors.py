@@ -11,6 +11,7 @@ import re
 from spacy.matcher import Matcher, PhraseMatcher
 from spacy.tokens import Doc, Span, Token
 import json
+from collections import defaultdict
 
 from main.parser.filings_base import Filing, FilingSection
 from main.domain import model, commands
@@ -31,6 +32,21 @@ into model objects and into command objects for the MessageBus
 class UnhandledClassificationError(Exception):
     pass
 
+class ExtractedSecurities:
+    def __init__(self, securities: list[model.Security]=None):
+        self.securities = list() if securities is None else securities
+        self.objects_map = defaultdict(list)
+    
+    def add_security(self, security: model.Security, associated_secu_objects: list[SECU]):
+        if security not in self.securities:
+            self.securities.append(security)
+            self.objects_map[security] = associated_secu_objects
+        else:
+            logger.warning(f"model.Security {security} is already present on this ExtractedSecurities object.")
+    
+    def get_secu_objects(self, security: model.Security):
+        return self.objects_map[security]
+
 
 class AbstractFilingExtractor(ABC):
     def extract_form_values(self, filing: Filing, company: model.Company, bus: MessageBus):
@@ -38,9 +54,13 @@ class AbstractFilingExtractor(ABC):
         pass
 
 
-class BaseHTMExtractor2:
+class BaseHTMExtractor:
     def __init__(self):
         self.formater = MatchFormater()
+        self.spacy_text_search = SpacyFilingTextSearch()
+    
+    def doc_from_section(self, section: FilingSection) -> Doc:
+        return self.spacy_text_search.nlp(section.text_only)
     
     def _merge_attributes(self, d1: dict, d2: dict) -> Dict:
         # TODO: DEPRECATE shouldnt be needed after rework
@@ -55,9 +75,9 @@ class BaseHTMExtractor2:
                 d1[d2key] = d2[d2key]
         return d1 
     
-    def get_secu_exercise_price(self, secu: SECU):
+    def get_secu_exercise_price(self, secu: SECU) -> float|None:
         if secu.exercise_price is not None:
-            return secu.exercise_price
+            return secu.exercise_price.amount
         return None
     
     def get_secu_expiry(self, secu: SECU):
@@ -89,8 +109,9 @@ class BaseHTMExtractor2:
         # TODO: implement in SECU objects first
         logger.debug("get_secu_conversion not implemented")
         pass
-
-    def get_security_attributes(self, secu: SECU, security_type: Security) -> Dict:  
+    
+    def get_security_attributes(self, secu: SECU, security_type: Security) -> Dict:
+        # TODO: add convertible Feature when implemented  
         attributes = {}
         if security_type == CommonShare:
             attributes = {
@@ -128,14 +149,19 @@ class BaseHTMExtractor2:
         logger.info(f"attributes: {attributes} of security: {secu.secu_key, secu.original.i} with type: {security_type}")
         return attributes
     
-    def get_securities_from_docs(self, docs: List[Doc]) -> List[model.Security]:
-        '''create model.Security instances from SECU objects found on the Doc'''
+    def get_securities_from_docs(self, docs: List[Doc]) -> ExtractedSecurities:
+        '''
+        create model.Security instances from SECU objects found on the Doc and
+        associate them through a model.Security->SECU map (present as objects_map on ExtractedSecurities)
+        '''
         for doc in docs:
             if not doc.has_extension("secu_objects"):
                 raise AttributeError(f"doc object is missing extension attribute")
-        securities = []
+        extracted = ExtractedSecurities()
         secu_keys = set([key for key, _ in doc._.secu_objects.items() for doc in docs])
         for key in secu_keys:
+            # i work under the assumption that a secu_key is a unique identifier in a doc for a given security
+            associated_secu_objects = []
             security_attributes = {}
             security_type = security_type_factory.get_security_type(key)
             for doc in docs:
@@ -146,50 +172,14 @@ class BaseHTMExtractor2:
                             security_attributes,
                             self.get_security_attributes(secu, security_type)
                         )
-            try:
+                        associated_secu_objects.append(secu)
+            try: 
                 security = model.Security(security_type(**security_attributes))
             except ValidationError:
                 logger.info(f"Failed to construct model.Security from args: security_type={security_type}, security_attributes={security_attributes}")
             else:
-                securities.append(security)
-        return securities
-
-class BaseHTMExtractor:
-    def __init__(self):
-        self.spacy_text_search = SpacyFilingTextSearch()
-        self.formater = MatchFormater()
-    
-    def get_secu_key(self, security: Span|str) -> str:
-        if isinstance(security, str):
-            doc = self.spacy_text_search.nlp(security)
-            security = doc[0:]
-        if isinstance(security, Span):
-            return get_secu_key(security)
-        else:
-            raise TypeError(f"BaseHTMExtractor.get_secu_key is expecting type:Span got:{type(security)}")
-    
-    def get_mentioned_secus(self, doc: Doc, secus: Optional[Dict]=None) -> Dict:
-        #TODO: check if this can be DEPRECATED
-        if secus is None:
-            secus = dict()
-        single_secu_alias_tuples = doc._.single_secu_alias_tuples
-        for key in single_secu_alias_tuples.keys():
-            if key not in secus.keys():
-                secus[key] = []
-            secus[key] += single_secu_alias_tuples[key]["no_alias"]
-            for alias in single_secu_alias_tuples[key]["alias"]:
-                alias_span = alias[1]
-                alias_key = get_secu_key(alias_span)
-                if alias_key:
-                    if alias_key not in secus.keys():
-                        secus[alias_key] = []
-                    similar_spans = self.spacy_text_search.get_queryable_similar_spans_from_lower(doc, alias_span)
-                    if similar_spans:
-                        secus[alias_key] += similar_spans
-        return secus
-    
-    def get_security_type(self, security_name: str) -> SecurityType:
-        return security_type_factory.get_security_type(security_name)
+                extracted.add_security(security, associated_secu_objects)
+        return extracted
     
     def handle_extracted_securities_through_bus(self, bus: MessageBus, filing: Filing, company: model.Company, securities: list[model.Security]):
         bus.handle(commands.AddSecurities(company.cik, company.symbol, securities))
@@ -204,18 +194,41 @@ class BaseHTMExtractor:
                 ))
             else:
                 logger.warning(f"couldnt add security occurence, because required search_attributes werent present. security_attributes: {security.security_attributes}")
+        
+
+    def handle_outstanding_security_facts_through_bus(self, bus: MessageBus, filing: Filing, company: model.Company, extracted: ExtractedSecurities):
+        for security in extracted.securities:
+            secu_objects = extracted.get_secu_objects(security)
+            if secu_objects != []:
+                outstanding_facts = []
+                for secu in secu_objects:
+                    outstanding_relations = secu.get_outstanding_quantity_relations()
+                    if outstanding_relations:
+                        for relation in outstanding_relations:
+                            fact = model.SecurityOutstanding(
+                                relation.quantity.amount.amount,
+                                relation.quantity.datetime_relation.timestamp
+                            )
+                            outstanding_facts.append(fact)
+            if outstanding_facts != []:
+                security_search_attributes = self.get_default_search_attributes_for_security(security)
+                cmd = commands.AddOutstandingSecurityFact(
+                    cik=company.cik,
+                    symbol=company.symbol,
+                    attributes=security_search_attributes,
+                    outstanding=outstanding_facts
+                )
+                bus.handle(cmd)
     
-    def merge_attributes(self, d1: dict, d2: dict) -> Dict:
-        logger.debug(f"merging: {d1} and {d2}")
-        if (d2 is None) or (d2 == {}):
-            return d1
-        for d2key in d2.keys():
-            try:
-                if (d1[d2key] is None) and (d2[d2key] is not None):
-                    d1[d2key] = d2[d2key]
-            except KeyError:
-                d1[d2key] = d2[d2key]
-        return d1 
+    def default_security_pipeline(self, bus: MessageBus, filing: Filing, company: model.Company, docs: list[Doc]|None):
+        # add a default for usually wanted things (securities, outstanding, ....)
+        extracted_securities = self.get_securities_from_docs(docs)
+        self.handle_extracted_securities_through_bus(
+            bus,filing, company, extracted_securities.securities)
+        self.handle_outstanding_security_facts_through_bus(
+            bus, filing, company, extracted_securities
+        )
+        # TODO: update this if we add new facts
     
     def get_default_search_attributes_for_security(self, security: model.Security) -> dict|None:
         if not isinstance(security, model.Security):
@@ -233,7 +246,8 @@ class BaseHTMExtractor:
                     attr = attrs.get(each, None)
                     if attr:
                         wanted_attributes[each] = attr
-                if len(wanted_attributes.keys()-1) >= len(uniqueness_attributes):
+                logger.warning(f"wanted_attributes: {wanted_attributes}")
+                if len(wanted_attributes.keys()) >= len(uniqueness_attributes)-1:
                     wanted_attributes["name"] = security.name
                     return wanted_attributes
             elif security.security_type == "Option":
@@ -242,7 +256,7 @@ class BaseHTMExtractor:
                     attr = attrs.get(each, None)
                     if attr:
                         wanted_attributes[each] = attr
-                if len(wanted_attributes.keys()-1) >= len(uniqueness_attributes):
+                if len(wanted_attributes.keys()) >= len(uniqueness_attributes)-1:
                     wanted_attributes["name"] = security.name
                     return wanted_attributes
             elif security.security_type == "DebtSecurity":
@@ -251,235 +265,339 @@ class BaseHTMExtractor:
                     attr = attrs.get(each, None)
                     if attr:
                         wanted_attributes[each] = attr
-                if len(wanted_attributes.keys()-1) >= len(uniqueness_attributes) and "interest_rate" in wanted_attributes.keys():
+                if len(wanted_attributes.keys()) >= len(uniqueness_attributes)-1 and "interest_rate" in wanted_attributes.keys():
                     wanted_attributes["name"] = security.name
                     return wanted_attributes
         return None
-    
-    def get_security_attributes(self, doc: Doc, security_name: str, security_type: Security, security_spans) -> Dict:  
-        #TODO: replace with function: check_security_has_inital_required_security_type_attributes (think of better name)
-        attributes = {}
-        _kwargs = {"doc": doc, "security_name": security_name, "security_spans": security_spans}
-        if security_type == CommonShare:
-            attributes = {
-                "name": security_name
-                }
-        elif security_type == PreferredShare:
-            attributes = {
-                "name": security_name
-                }
-        elif security_type == Warrant:
-            attributes = {
-                "name": security_name,
-                "exercise_price": self.get_secu_exercise_price(**_kwargs),
-                "expiry_date": self.get_secu_expiry_by_type(wanted="datetime", **_kwargs),
-                "expiry_timedelta": self.get_secu_expiry_by_type(wanted="timedelta", **_kwargs),
-                "right": self.get_secu_right(**_kwargs),
-                "multiplier": self.get_secu_multiplier(**_kwargs),
-                "issue_date": self.get_secu_latest_issue_date(**_kwargs)
-                }
-        elif security_type == Option:
-            attributes = {
-                "name": security_name,
-                "strike_price": self.get_secu_exercise_price(**_kwargs),
-                "expiry": self.get_secu_expiry(**_kwargs),
-                "right": self.get_secu_right(**_kwargs),
-                "multiplier": self.get_secu_multiplier(**_kwargs),
-                "issue_date": self.get_secu_latest_issue_date(**_kwargs)
-            }
-        elif security_type == DebtSecurity:
-            attributes = {
-                "name": security_name,
-                "interest_rate": self.get_secu_interest_rate(**_kwargs),
-                "maturity": self.get_secu_expiry(**_kwargs),
-                "issue_date": self.get_secu_latest_issue_date(**_kwargs)
-            }
-        logger.info(f"attributes: {attributes} of security: {security_name} with type: {security_type}")
-        return attributes
-    
-    def get_securities_from_docs(self, docs: List[Doc]) -> List[model.Security]:
-        # TODO: rewrite this to use new SECU class 
-        # 1) get SECU objects
-        # 2) get security type for given secu key
-        # 3) check the securities with given key against requirements for given security type
-        # 4) create the model and append to securities list
-        securities = []
-        mentioned_secus = {}
-        for doc in docs:
-            mentioned_secus = self.get_mentioned_secus(doc, mentioned_secus)
-        logger.debug(f"finished collecting mentioned_secus: {mentioned_secus}")
-        for secu, secu_spans in mentioned_secus.items():
-            security_type = self.get_security_type(secu)
-            logger.debug(f"getting security_attributes for {secu} with type: {security_type}")
-            security_attributes = {}
-            for doc in docs:
-                security_attributes = self.merge_attributes(
-                    security_attributes,
-                    self.get_security_attributes(doc, secu, security_type, secu_spans))
-            try:
-                security = model.Security(security_type(**security_attributes))
-            except ValidationError:
-                logger.info(f"Failed to construct model.Security from args: security_type={security_type}, security_attributes={security_attributes}")
-            else:
-                securities.append(security)
-        return securities
 
-    def get_secu_exercise_price(self, doc: Doc, security_name: str, security_spans: List[Span]) -> str|NoneType:
-        # DEPRECATE shouldnt be needed since we have the exercise price within the SECU object
-        exercise_prices_seen = set()
-        exercise_prices = []
-        logger.debug("get_secu_exercise_price:")
-        logger.debug(f" getting exercise_price for:")
-        logger.debug(f"     security_name  - {security_name}")
-        logger.debug(f"     security_spans - {security_spans}")
-        for secu in security_spans:
-            for sent in doc.sents:
-                if self._is_span_in_sent(sent, secu):
-                    temp_doc = doc[sent.start:sent.end]
-                    exercies_price = self.spacy_text_search.match_secu_exercise_price(temp_doc, secu)
-                    if exercies_price:
-                        for price in exercies_price:
-                            if price not in exercise_prices_seen:
-                                exercise_prices_seen.add(price)
-                                exercise_prices.append(price)
-                                logger.debug(f"     exercise price found: {price}")
-                                logger.debug(f"     sentence: {temp_doc}")
-        if len(exercise_prices) > 1:
-            logger.info(UnclearInformationExtraction(f"unhandled case of exercise_price extraction, got more than one exercise_price for a security: {exercise_prices}"), exc_info=True)
-            return None
-        return exercise_prices[0] if exercise_prices != [] else None
+# class BaseHTMExtractor2:
+#     def __init__(self):
+#         self.spacy_text_search = SpacyFilingTextSearch()
+#         self.formater = MatchFormater()
     
-    def _is_span_in_sent(self, sent: Span, span: Span|Token) -> bool:
-        token_idx_offset = sent[0].i
-        if isinstance(span, Span):
-            span_length = len(span)
-            first_token = span[0]
-            for token in sent:
-                if token == first_token:
-                    first_idx = token.i - token_idx_offset
-                    try:
-                        if sent[first_idx:first_idx+span_length] == span:
-                            if self._span_neighbors_arent_SECU(sent, span):
-                                return True
-                    except IndexError:
-                        logger.debug("excepted IndexError in _assert_any_secu_span_is_in_match; passing.")
-                        pass
-        if isinstance(span, Token):
-            if self._is_single_token_SECU_in_sent(sent, span):
-                return True
-        return False
+#     def get_secu_key(self, security: Span|str) -> str:
+#         if isinstance(security, str):
+#             doc = self.spacy_text_search.nlp(security)
+#             security = doc[0:]
+#         if isinstance(security, Span):
+#             return get_secu_key(security)
+#         else:
+#             raise TypeError(f"BaseHTMExtractor.get_secu_key is expecting type:Span got:{type(security)}")
+    
+#     def get_mentioned_secus(self, doc: Doc, secus: Optional[Dict]=None) -> Dict:
+#         #TODO: check if this can be DEPRECATED
+#         if secus is None:
+#             secus = dict()
+#         single_secu_alias_tuples = doc._.single_secu_alias_tuples
+#         for key in single_secu_alias_tuples.keys():
+#             if key not in secus.keys():
+#                 secus[key] = []
+#             secus[key] += single_secu_alias_tuples[key]["no_alias"]
+#             for alias in single_secu_alias_tuples[key]["alias"]:
+#                 alias_span = alias[1]
+#                 alias_key = get_secu_key(alias_span)
+#                 if alias_key:
+#                     if alias_key not in secus.keys():
+#                         secus[alias_key] = []
+#                     similar_spans = self.spacy_text_search.get_queryable_similar_spans_from_lower(doc, alias_span)
+#                     if similar_spans:
+#                         secus[alias_key] += similar_spans
+#         return secus
+    
+#     def get_security_type(self, security_name: str) -> SecurityType:
+#         return security_type_factory.get_security_type(security_name)
+    
+#     def handle_securities_through_bus(self, bus: MessageBus, filing: Filing, company: model.Company, securities: list[model.Security]):
+#         bus.handle(commands.AddSecurities(company.cik, company.symbol, securities))
+#         for security in securities:
+#             search_attributes = self.get_default_search_attributes_for_security(security)
+#             if search_attributes:
+#                 bus.handle(commands.AddSecurityAccnOccurence(
+#                     cik=company.cik,
+#                     symbol=company.symbol,
+#                     security_attributes=search_attributes,
+#                     accn=filing.accession_number
+#                 ))
+#             else:
+#                 logger.warning(f"couldnt add security occurence, because required search_attributes werent present. security_attributes: {security.security_attributes}")
+
+
+
+#     def merge_attributes(self, d1: dict, d2: dict) -> Dict:
+#         logger.debug(f"merging: {d1} and {d2}")
+#         if (d2 is None) or (d2 == {}):
+#             return d1
+#         for d2key in d2.keys():
+#             try:
+#                 if (d1[d2key] is None) and (d2[d2key] is not None):
+#                     d1[d2key] = d2[d2key]
+#             except KeyError:
+#                 d1[d2key] = d2[d2key]
+#         return d1 
+    
+#     def get_default_search_attributes_for_security(self, security: model.Security) -> dict|None:
+#         if not isinstance(security, model.Security):
+#             raise TypeError(f"{self} Expecting model.Security got type: {type(security)}")
+#         if security.security_type == "CommonShare":
+#             return {"name": security.name}
+#         elif security.security_type == "PreferredShare":
+#             return {"name": security.name}
+#         else:
+#             attrs = json.loads(security.security_attributes)
+#             wanted_attributes = {}
+#             if security.security_type == "Warrant":
+#                 uniqueness_attributes = ["expiry_date", "exercise_price"]
+#                 for each in uniqueness_attributes:
+#                     attr = attrs.get(each, None)
+#                     if attr:
+#                         wanted_attributes[each] = attr
+#                 if len(wanted_attributes.keys()-1) >= len(uniqueness_attributes):
+#                     wanted_attributes["name"] = security.name
+#                     return wanted_attributes
+#             elif security.security_type == "Option":
+#                 uniqueness_attributes = ["strike_price", "expiry", "issue_date"]
+#                 for each in uniqueness_attributes:
+#                     attr = attrs.get(each, None)
+#                     if attr:
+#                         wanted_attributes[each] = attr
+#                 if len(wanted_attributes.keys()-1) >= len(uniqueness_attributes):
+#                     wanted_attributes["name"] = security.name
+#                     return wanted_attributes
+#             elif security.security_type == "DebtSecurity":
+#                 uniqueness_attributes = ["interest_rate", "maturity", "issue_date"]
+#                 for each in uniqueness_attributes:
+#                     attr = attrs.get(each, None)
+#                     if attr:
+#                         wanted_attributes[each] = attr
+#                 if len(wanted_attributes.keys()-1) >= len(uniqueness_attributes) and "interest_rate" in wanted_attributes.keys():
+#                     wanted_attributes["name"] = security.name
+#                     return wanted_attributes
+#         return None
+    
+#     def get_security_attributes(self, doc: Doc, security_name: str, security_type: Security, security_spans) -> Dict:  
+#         #TODO: replace with function: check_security_has_inital_required_security_type_attributes (think of better name)
+#         attributes = {}
+#         _kwargs = {"doc": doc, "security_name": security_name, "security_spans": security_spans}
+#         if security_type == CommonShare:
+#             attributes = {
+#                 "name": security_name
+#                 }
+#         elif security_type == PreferredShare:
+#             attributes = {
+#                 "name": security_name
+#                 }
+#         elif security_type == Warrant:
+#             attributes = {
+#                 "name": security_name,
+#                 "exercise_price": self.get_secu_exercise_price(**_kwargs),
+#                 "expiry_date": self.get_secu_expiry_by_type(wanted="datetime", **_kwargs),
+#                 "expiry_timedelta": self.get_secu_expiry_by_type(wanted="timedelta", **_kwargs),
+#                 "right": self.get_secu_right(**_kwargs),
+#                 "multiplier": self.get_secu_multiplier(**_kwargs),
+#                 "issue_date": self.get_secu_latest_issue_date(**_kwargs)
+#                 }
+#         elif security_type == Option:
+#             attributes = {
+#                 "name": security_name,
+#                 "strike_price": self.get_secu_exercise_price(**_kwargs),
+#                 "expiry": self.get_secu_expiry(**_kwargs),
+#                 "right": self.get_secu_right(**_kwargs),
+#                 "multiplier": self.get_secu_multiplier(**_kwargs),
+#                 "issue_date": self.get_secu_latest_issue_date(**_kwargs)
+#             }
+#         elif security_type == DebtSecurity:
+#             attributes = {
+#                 "name": security_name,
+#                 "interest_rate": self.get_secu_interest_rate(**_kwargs),
+#                 "maturity": self.get_secu_expiry(**_kwargs),
+#                 "issue_date": self.get_secu_latest_issue_date(**_kwargs)
+#             }
+#         logger.info(f"attributes: {attributes} of security: {security_name} with type: {security_type}")
+#         return attributes
+    
+#     def get_securities_from_docs(self, docs: List[Doc]) -> List[model.Security]:
+#         # TODO: rewrite this to use new SECU class 
+#         # 1) get SECU objects
+#         # 2) get security type for given secu key
+#         # 3) check the securities with given key against requirements for given security type
+#         # 4) create the model and append to securities list
+#         securities = []
+#         mentioned_secus = {}
+#         for doc in docs:
+#             mentioned_secus = self.get_mentioned_secus(doc, mentioned_secus)
+#         logger.debug(f"finished collecting mentioned_secus: {mentioned_secus}")
+#         for secu, secu_spans in mentioned_secus.items():
+#             security_type = self.get_security_type(secu)
+#             logger.debug(f"getting security_attributes for {secu} with type: {security_type}")
+#             security_attributes = {}
+#             for doc in docs:
+#                 security_attributes = self.merge_attributes(
+#                     security_attributes,
+#                     self.get_security_attributes(doc, secu, security_type, secu_spans))
+#             try:
+#                 security = model.Security(security_type(**security_attributes))
+#             except ValidationError:
+#                 logger.info(f"Failed to construct model.Security from args: security_type={security_type}, security_attributes={security_attributes}")
+#             else:
+#                 securities.append(security)
+#         return securities
+
+#     def get_secu_exercise_price(self, doc: Doc, security_name: str, security_spans: List[Span]) -> str|NoneType:
+#         # DEPRECATE shouldnt be needed since we have the exercise price within the SECU object
+#         exercise_prices_seen = set()
+#         exercise_prices = []
+#         logger.debug("get_secu_exercise_price:")
+#         logger.debug(f" getting exercise_price for:")
+#         logger.debug(f"     security_name  - {security_name}")
+#         logger.debug(f"     security_spans - {security_spans}")
+#         for secu in security_spans:
+#             for sent in doc.sents:
+#                 if self._is_span_in_sent(sent, secu):
+#                     temp_doc = doc[sent.start:sent.end]
+#                     exercies_price = self.spacy_text_search.match_secu_exercise_price(temp_doc, secu)
+#                     if exercies_price:
+#                         for price in exercies_price:
+#                             if price not in exercise_prices_seen:
+#                                 exercise_prices_seen.add(price)
+#                                 exercise_prices.append(price)
+#                                 logger.debug(f"     exercise price found: {price}")
+#                                 logger.debug(f"     sentence: {temp_doc}")
+#         if len(exercise_prices) > 1:
+#             logger.info(UnclearInformationExtraction(f"unhandled case of exercise_price extraction, got more than one exercise_price for a security: {exercise_prices}"), exc_info=True)
+#             return None
+#         return exercise_prices[0] if exercise_prices != [] else None
+    
+#     def _is_span_in_sent(self, sent: Span, span: Span|Token) -> bool:
+#         token_idx_offset = sent[0].i
+#         if isinstance(span, Span):
+#             span_length = len(span)
+#             first_token = span[0]
+#             for token in sent:
+#                 if token == first_token:
+#                     first_idx = token.i - token_idx_offset
+#                     try:
+#                         if sent[first_idx:first_idx+span_length] == span:
+#                             if self._span_neighbors_arent_SECU(sent, span):
+#                                 return True
+#                     except IndexError:
+#                         logger.debug("excepted IndexError in _assert_any_secu_span_is_in_match; passing.")
+#                         pass
+#         if isinstance(span, Token):
+#             if self._is_single_token_SECU_in_sent(sent, span):
+#                 return True
+#         return False
                 
     
-    def _is_single_token_SECU_in_sent(self, sent: Span, token: Token) -> bool:
-        if token in sent:
-            if self._span_neighbors_arent_SECU(sent, token):
-                return True
-        return False
+#     def _is_single_token_SECU_in_sent(self, sent: Span, token: Token) -> bool:
+#         if token in sent:
+#             if self._span_neighbors_arent_SECU(sent, token):
+#                 return True
+#         return False
     
-    def _span_neighbors_arent_SECU(self, sent: Span, span: Span|Token) -> bool:
-        token_idx_offset = sent[0].i
-        if isinstance(span, Token):
-            start = span.i
-            end = start
-        else:
-            start = span[0].i
-            end = span[-1].i
-        start = start - token_idx_offset
-        end = end - token_idx_offset
-        if start != 0 and end != sent[-1].i:
-            if sent[start-1].ent_type_ != "SECU" and sent[end+1].ent_type_ != "SECU":
-                return True
-        else:
-            if start != 0:
-                if sent[start-1].ent_type_ != "SECU":
-                    return True
-            else:
-                if sent[end+1].ent_type_ != "SECU":
-                    return True
-        return False
+#     def _span_neighbors_arent_SECU(self, sent: Span, span: Span|Token) -> bool:
+#         token_idx_offset = sent[0].i
+#         if isinstance(span, Token):
+#             start = span.i
+#             end = start
+#         else:
+#             start = span[0].i
+#             end = span[-1].i
+#         start = start - token_idx_offset
+#         end = end - token_idx_offset
+#         if start != 0 and end != sent[-1].i:
+#             if sent[start-1].ent_type_ != "SECU" and sent[end+1].ent_type_ != "SECU":
+#                 return True
+#         else:
+#             if start != 0:
+#                 if sent[start-1].ent_type_ != "SECU":
+#                     return True
+#             else:
+#                 if sent[end+1].ent_type_ != "SECU":
+#                     return True
+#         return False
     
-    def get_secu_expiry_by_type(self, wanted: str, doc: Doc, security_name: str, security_spans: List[Span]) -> str|NoneType:
-        # TODO: DEPRECATE shouldnt be needed after rework
-        '''
-        handle the case for the expiry as a timedelta from the issuance date or as a specific date in time.
+#     def get_secu_expiry_by_type(self, wanted: str, doc: Doc, security_name: str, security_spans: List[Span]) -> str|NoneType:
+#         # TODO: DEPRECATE shouldnt be needed after rework
+#         '''
+#         handle the case for the expiry as a timedelta from the issuance date or as a specific date in time.
 
-        Args:
-            wanted: 
-                "timedelta" to get only timedelta returns
-                "datetime" to get only date returns
+#         Args:
+#             wanted: 
+#                 "timedelta" to get only timedelta returns
+#                 "datetime" to get only date returns
         
-        Returns:
-            timedelta, datetime or None
-        '''
-        expiry = self.get_secu_expiry(doc=doc, security_name=security_name, security_spans=security_spans)
-        if expiry:
-            if isinstance(expiry, timedelta) and wanted == "timedelta":
-                return expiry
-            if isinstance(expiry, datetime) and wanted == "datetime":
-                return expiry
-        return None
+#         Returns:
+#             timedelta, datetime or None
+#         '''
+#         expiry = self.get_secu_expiry(doc=doc, security_name=security_name, security_spans=security_spans)
+#         if expiry:
+#             if isinstance(expiry, timedelta) and wanted == "timedelta":
+#                 return expiry
+#             if isinstance(expiry, datetime) and wanted == "datetime":
+#                 return expiry
+#         return None
     
-    def get_secu_expiry(self, doc: Doc, security_name: str, security_spans: List[Span]) -> str|NoneType:
-        # TODO: DEPREACTE since we have the expiry within the SECU objects
-        expiries_seen = set()
-        expiries = []
-        logger.debug("get_secu_expiry:")
-        logger.debug(f" getting expiry for:")
-        logger.debug(f"     security_name  - {security_name}")
-        logger.debug(f"     security_spans - {security_spans}")
-        for secu in security_spans:
-            for sent in doc.sents:
-                if self._is_span_in_sent(sent, secu):
-                    temp_doc = doc[sent.start:sent.end]
-                    expiry = self.spacy_text_search.match_secu_expiry(temp_doc, secu)
-                    if expiry:
-                        for ex in expiry:
-                            logger.info(ex)
-                            if ex not in expiries_seen and ex is not None:
-                                expiries_seen.add(ex)
-                                expiries.append(ex)
-        if len(expiries) > 1:
-            raise UnclearInformationExtraction(f"Couldnt get a definitive match for the expiry, got multiple: {expiries}")
-        else:
-            return expiries[0] if expiries != [] else None
+#     def get_secu_expiry(self, doc: Doc, security_name: str, security_spans: List[Span]) -> str|NoneType:
+#         # TODO: DEPREACTE since we have the expiry within the SECU objects
+#         expiries_seen = set()
+#         expiries = []
+#         logger.debug("get_secu_expiry:")
+#         logger.debug(f" getting expiry for:")
+#         logger.debug(f"     security_name  - {security_name}")
+#         logger.debug(f"     security_spans - {security_spans}")
+#         for secu in security_spans:
+#             for sent in doc.sents:
+#                 if self._is_span_in_sent(sent, secu):
+#                     temp_doc = doc[sent.start:sent.end]
+#                     expiry = self.spacy_text_search.match_secu_expiry(temp_doc, secu)
+#                     if expiry:
+#                         for ex in expiry:
+#                             logger.info(ex)
+#                             if ex not in expiries_seen and ex is not None:
+#                                 expiries_seen.add(ex)
+#                                 expiries.append(ex)
+#         if len(expiries) > 1:
+#             raise UnclearInformationExtraction(f"Couldnt get a definitive match for the expiry, got multiple: {expiries}")
+#         else:
+#             return expiries[0] if expiries != [] else None
 
-    def get_secu_multiplier(self, doc: Doc, security_name: str, security_spans: List[Span]):
-        # TODO: implement
-        logger.debug("get_secu_multiplier returning dummy value: 1")
-        return 1
+#     def get_secu_multiplier(self, doc: Doc, security_name: str, security_spans: List[Span]):
+#         # TODO: implement
+#         logger.debug("get_secu_multiplier returning dummy value: 1")
+#         return 1
 
-    def get_secu_latest_issue_date(self, doc: Doc, security_name: str, security_spans: List[Span]):
-        # TODO: implement to use SECU objects
-        logger.debug("get_secu_latest_issue_date returning dummy value: None")
-        return None
+#     def get_secu_latest_issue_date(self, doc: Doc, security_name: str, security_spans: List[Span]):
+#         # TODO: implement to use SECU objects
+#         logger.debug("get_secu_latest_issue_date returning dummy value: None")
+#         return None
 
-    def get_secu_interest_rate(self, doc: Doc, security_name: str, security_spans: List[Span]):
-        # TODO: implement to use SECU objects
-        logger.debug("get_secu_interest_rate returning dummy value: 0.05")
-        return 0.05
+#     def get_secu_interest_rate(self, doc: Doc, security_name: str, security_spans: List[Span]):
+#         # TODO: implement to use SECU objects
+#         logger.debug("get_secu_interest_rate returning dummy value: 0.05")
+#         return 0.05
 
-    def get_secu_right(self, doc: Doc, security_name: str, security_spans: List[Span]):
-        # TODO: implement to use SECU objects
-        logger.debug("get_secu_right returning dummy value: 'Call'")
-        return "Call"
+#     def get_secu_right(self, doc: Doc, security_name: str, security_spans: List[Span]):
+#         # TODO: implement to use SECU objects
+#         logger.debug("get_secu_right returning dummy value: 'Call'")
+#         return "Call"
 
-    def get_secu_conversion(self, doc: Doc, security_name: str, security_spans: List[Span]):
-        # TODO: implement to use SECU objects
-        logger.debug("get_secu_conversion not implemented")
-        pass
+#     def get_secu_conversion(self, doc: Doc, security_name: str, security_spans: List[Span]):
+#         # TODO: implement to use SECU objects
+#         logger.debug("get_secu_conversion not implemented")
+#         pass
     
-    def doc_from_section(self, section: FilingSection) -> Doc:
-        # TODO: implement to use SECU objects
-        return self.spacy_text_search.nlp(section.text_only)
+#     def doc_from_section(self, section: FilingSection) -> Doc:
+#         # TODO: implement to use SECU objects
+#         return self.spacy_text_search.nlp(section.text_only)
 
-    def extract_outstanding_shares(self, filing: Filing) -> list[model.SecurityOutstanding]|NoneType:
-        # TODO: adjust to use SECU objects
-        text = filing.get_text_only()
-        if text is None:
-            logger.debug(filing)
-            return None
-        values = self.spacy_text_search.match_outstanding_shares(text)
-        return [model.SecurityOutstanding(v["amount"], v["date"]) for v in values]
+#     def extract_outstanding_shares(self, filing: Filing) -> list[model.SecurityOutstanding]|NoneType:
+#         # TODO: adjust to use SECU objects
+#         text = filing.get_text_only()
+#         if text is None:
+#             logger.debug(filing)
+#             return None
+#         values = self.spacy_text_search.match_outstanding_shares(text)
+#         return [model.SecurityOutstanding(v["amount"], v["date"]) for v in values]
 
 class HTMS1Extractor(BaseHTMExtractor, AbstractFilingExtractor):
     # TODO: rework with SECU objects in mind
@@ -487,9 +605,9 @@ class HTMS1Extractor(BaseHTMExtractor, AbstractFilingExtractor):
         return [self.extract_outstanding_shares(filing)]
 
 class HTMS3Extractor(BaseHTMExtractor, AbstractFilingExtractor):
-    # TODO: rework with SECU objects in mind
     def extract_form_values(self, filing: Filing, company: model.Company, bus: MessageBus):
         complete_doc = self.spacy_text_search.nlp(filing.get_text_only())
+        self.default_security_pipeline(bus, filing, company, [complete_doc])
         try:
             form_case = self.classify_s3(filing)
         except AttributeError as e:
@@ -497,8 +615,6 @@ class HTMS3Extractor(BaseHTMExtractor, AbstractFilingExtractor):
             return company
         cover_page_doc = self.doc_from_section(filing.get_section(re.compile("cover page")))
         # self.extract_securities(filing, company, bus, cover_page_doc)
-        securities = self.extract_securities(filing, company, bus, complete_doc)
-        logger.info(f"found {len(securities)} securities.")
         form_classifications = form_case["classifications"]
         if "shelf" in form_classifications:
             logger.info(f"Handling classification case: 'shelf' in form_case: {form_case}")
@@ -552,12 +668,10 @@ class HTMS3Extractor(BaseHTMExtractor, AbstractFilingExtractor):
             }
         resale = model.ResaleRegistration(**kwargs)
         bus.handle(commands.AddResaleRegistration(filing.cik, company.symbol, resale))
-        # company.add_resale(resale)
         self.handle_resale_security_registrations(filing, company, bus)
         # if no registrations can be found add whole dollar amount as common
         # add ShelfOffering
-        # get underwriters, registrations and completed then modify
-        # previously added ShelfOffering
+        # get underwriters, registrations and completed then modify previously added ShelfOffering
 
     def handle_resale_security_registrations(self, filing: Filing, company: model.Company, bus: MessageBus):
         security_registrations = self.get_resale_security_registrations(filing, company)
@@ -579,15 +693,13 @@ class HTMS3Extractor(BaseHTMExtractor, AbstractFilingExtractor):
                 "filing_date": filing.filing_date
             }
         shelf = model.ShelfRegistration(**kwargs)
-        bus.handle(commands.AddShelfRegistration(filing.cik, company.symbol, shelf))
-        # company.add_shelf(shelf)
-                
+        bus.handle(commands.AddShelfRegistration(filing.cik, company.symbol, shelf))                
     
     def handle_shelf_security_registration(self, filing: Filing, company: model.Company, bus: MessageBus, security_registration: model.ShelfSecurityRegistration):
         offering = company.get_shelf_offering(filing.accession_number)
         cmd = commands.AddShelfSecurityRegistration(filing.cik, company.symbol, filing.accession_number, security_registration=security_registration)
         bus.handle(cmd)
-        # offering.add_registration(security_registration)
+        logger.warning(f"{self} Not fully implemented yet")
     
     def get_ATM_security_registrations(self, filing: Filing, company: model.Company, cover_page: Doc):
         registrations = []
@@ -601,10 +713,11 @@ class HTMS3Extractor(BaseHTMExtractor, AbstractFilingExtractor):
 
 
     def extract_securities(self, filing: Filing, company: model.Company, bus: MessageBus, security_doc: Doc) -> List[model.Security]:
+        # TODO: OBSOLETE with addition of default_securities_pipeline in BaseHTMExtractor
         '''extract securities from security_doc.'''
-        securities = self.get_securities_from_docs([security_doc])
-        self.handle_extracted_securities_through_bus(bus, filing, company, securities)
-        return securities
+        extracted_securities = self.get_securities_from_docs([security_doc])
+        self.handle_extracted_securities_through_bus(bus, filing, company, extracted_securities.securities)
+        return extracted_securities.securities
     
     def extract_aggregate_offering_amount(self, cover_page: Doc) -> dict:
         matches = self.spacy_text_search.match_aggregate_offering_amount(cover_page)
@@ -622,6 +735,7 @@ class HTMS3Extractor(BaseHTMExtractor, AbstractFilingExtractor):
             return offering_data if (offering_data["amount"] is not None) else None
  
     def extract_securities_conversion_attributes(self, filing: Filing, company: model.Company, bus: MessageBus) -> List[model.SecurityConversion]:
+        logger.warning(f"{self} NOT IMPLEMENTED")
         description_sections = filing.get_sections(re.compile(r"description\s*of", re.I))
         description_docs = [self.doc_from_section(x) for x in description_sections]
         conversions = []
@@ -901,7 +1015,7 @@ class HTMS3Extractor(BaseHTMExtractor, AbstractFilingExtractor):
 
 class HTMDEF14AExtractor(BaseHTMExtractor, AbstractFilingExtractor):
     def extract_form_values(self, filing: Filing):
-        return [self.extract_outstanding_shares(filing)]
+        logger.warning(f"{self} NOT IMPLEMENTED DEF14A")
 
 
 class HTMSC13GExtractor(BaseHTMExtractor, AbstractFilingExtractor):

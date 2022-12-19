@@ -1698,11 +1698,12 @@ if __name__ == "__main__":
     # displacy_dep_with_search("perhaps, we issue certain stock if the time is right. we have the right to issue certain stock. we could issue certain stock. this agreement is concerning stock which we may issue. the stock which may be issued at some point. Perhaps, we will buy that. In may we may be buy that.",finegrained=True)
     # displacy_dep_with_search("As of March 31, 2021, we had outstanding warrants to purchase 7,532,390 shares of our common stock, and stock options to purchase 2,176,272 shares of our common stock.")
     # displacy_dep_with_search("As of April 20, 2022, we had warrants outstanding to issue 20000 shares of common stock at 3.0 $ per share.")
-    displacy_dep_with_search_multi([
-        "On April 20, 2022, we sold 10000 shares of our common stock at a purchase price of $2 per share.",
-        "On April 20, 2022, we had sold 10000 shares of our common stock at a purchase price of 2$ per share through a private placement.",
-        "On April 20, 2022, we issued 10000 shares of our common stock at a price of 2$ per share through the placement agent.",
-        ])
+    # displacy_dep_with_search_multi([
+    #     "On April 20, 2022, we sold 10000 shares of our common stock at a purchase price of $2 per share.",
+    #     "On April 20, 2022, we had sold 10000 shares of our common stock at a purchase price of 2$ per share through a private placement.",
+    #     "On April 20, 2022, we issued 10000 shares of our common stock at a price of 2$ per share through the placement agent.",
+    #     ])
+    
     # need to check the quantity relations for existance of: daterelation, amount, amods of parent secu and quant 
     # displacy_dep_with_search("The common stock outstanding after the offering is based on 113,299,612 shares of our common stock outstanding as of December 31, 2019 and the sale of 36,057,692 shares of our common stock at an assumed offering price of $2.08 per share, the last reported sale price of our common stock on the NASDAQ on March 16, 2020 and excludes the following")
 # get text only of filing

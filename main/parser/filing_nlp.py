@@ -37,7 +37,7 @@ from main.parser.filing_nlp_constants import (
     SINGULAR_PLURAL_SECU_TAIL_MAP,
     SECUQUANTITY_UNITS,
 )
-from main.parser.filing_nlp_SECU import SECU, SECUQuantity, SecurityAmount, QuantityRelation, SourceQuantityRelation
+from main.parser.filing_nlp_SECU import SECU, SECUQuantity, UnitAmount, QuantityRelation, SourceQuantityRelation
 
 logger = logging.getLogger(__name__)
 formater = MatchFormater()

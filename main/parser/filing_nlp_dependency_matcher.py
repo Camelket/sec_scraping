@@ -322,7 +322,7 @@ class SecurityDependencyAttributeMatcher(DependencyAttributeMatcher):
 
     # TODO: is get_exercise_price and get_expiry_date in the correct location here, or should it be moved to either SECU or somewhere else?
     # eg in a class that handles the information of date_relation and quantities to form a definitv object (eg: exercise_price with date, expiry ect)
-    def get_exercise_price(self, secu: Token):
+    def get_exercise_price(self, secu: Token) -> tuple[float, str]|None:
         prices = self._get_exercise_price(secu)
         if not prices:
             return None
@@ -332,13 +332,14 @@ class SecurityDependencyAttributeMatcher(DependencyAttributeMatcher):
                 "Multiple exercise prices found, current case only handles one. pretending we didnt find any."
             )
             logger.info(f"actual prices found were: {prices}")
+            return None
         else:
             return (
                 formater.quantity_string_to_float(prices[0][0].text),
                 prices[0][1].text,
             )
 
-    def _get_exercise_price(self, secu: Token):
+    def _get_exercise_price(self, secu: Token) -> list[tuple[float, str]]:
         anchor_pattern = self._get_anchor_pattern(secu)
         complete_pattern = add_anchor_pattern_to_patterns(
             anchor_pattern, SECU_EXERCISE_PRICE_PATTERNS

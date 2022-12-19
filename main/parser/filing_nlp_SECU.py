@@ -15,41 +15,41 @@ logger = logging.getLogger(__name__)
 
 #TODO: remove from filing_nlp and add imports instead
 
-class Amount:
-    def __init__(self, amount: float):
-        self.amount = amount
+# class FloatAmount:
+#     def __init__(self, amount: float):
+#         self.amount = amount
 
-    def __eq__(self, other):
-        if isinstance(other, Amount):
-            if self.amount == other.amount:
-                return True
-        return False
+#     def __eq__(self, other):
+#         if isinstance(other, FloatAmount):
+#             if self.amount == other.amount:
+#                 return True
+#         return False
 
-    def __repr__(self):
-        return f"{self.amount}"
-
-
-class Unit:
-    def __init__(self, unit: str):
-        self.unit = unit
-
-    def __eq__(self, other):
-        if isinstance(other, Unit):
-            if self.unit == other.unit:
-                return True
-        return False
-
-    def __repr__(self):
-        return self.unit
+#     def __repr__(self):
+#         return f"{self.amount}"
 
 
-class SecurityAmount:
+# class Unit:
+#     def __init__(self, unit: str):
+#         self.unit = unit
+
+#     def __eq__(self, other):
+#         if isinstance(other, Unit):
+#             if self.unit == other.unit:
+#                 return True
+#         return False
+
+#     def __repr__(self):
+#         return self.unit
+
+
+class UnitAmount:
     def __init__(self, amount, unit):
-        self.amount: Amount = amount
-        self.unit: Unit = unit
+        self.amount: float = amount
+        self.unit: str = unit
 
     def __eq__(self, other):
-        if isinstance(other, SecurityAmount):
+        if isinstance(other, UnitAmount):
             if (self.amount == other.amount) and (self.unit == other.unit):
                 return True
         return False
@@ -63,7 +63,7 @@ class SECUQuantity:
         self.original: Token | Span = original
         self._quantity = original._.secuquantity
         self._unit: str = original._.secuquantity_unit
-        self.amount: SecurityAmount = SecurityAmount(self._quantity, self._unit)
+        self.amount: UnitAmount = UnitAmount(self._quantity, self._unit)
         self.amods: list = original._.amods
         self.parent_verb = attr_matcher.get_parent_verb(self.original)
         self._date_relations = attr_matcher.get_date_relation(self.original)
@@ -164,12 +164,16 @@ class SECU:
         self.parent_verb: Token | None = attr_matcher.get_parent_verb(self.original)
         self.aux_verbs: list = attr_matcher.get_aux_verbs(self.original)
         self.date_relations: list[dict] = attr_matcher.get_date_relation(self.original)
-        self.exercise_price: tuple | None = attr_matcher.get_exercise_price(
-            self.original
-        )
+        self.exercise_price: UnitAmount | None = self._format_exercise_price(self.original)
         self.expiry_date = self._get_expiry_datetime_relation()
         self.exercise_date = self._get_exercise_datetime_relation()
         # TODO: maybe add securitytype through the factory with secu_key?
+    
+    def _format_exercise_price(self, original: Token) -> UnitAmount|None:
+        ep = self.attr_matcher.get_exercise_price(original)
+        if ep:
+            return UnitAmount(ep[0], ep[1])
+        return None
     
     def get_outstanding_quantity_relations(self) -> list[QuantityRelation]|None:
         '''

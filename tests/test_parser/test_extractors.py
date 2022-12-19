@@ -6,7 +6,7 @@ from pathlib import Path
 import datetime
 import re
 from main.parser.parsers import filing_factory
-from main.domain import model
+from main.domain import model, commands
 from main.services import unit_of_work, messagebus
 
 s3_shelf = r"test_resources\filings\0001035976\S-3\000143774918017591\fncb20180927_s3.htm"
@@ -157,10 +157,11 @@ def test_security_extraction_s3_shelf(get_s3_extractor, get_fake_messagebus, get
     company = get_fake_company()
     cover_page = filing.get_section(re.compile("cover page"))
     cover_page_doc = extractor.doc_from_section(cover_page)
+    # add return to default pipeline
     securities = extractor.extract_securities(filing, company, bus, cover_page_doc)
     expected_securities = [
         model.Security(model.CommonShare(name="common stock", par_value=0.001)),
-        model.Security(model.PreferredShare(name="preferred stock", par_value=0.001))
+        model.Security(model.PreferredShare(name="preferred stock", par_value=0.001, convertible_feature=None)),
         ]
     assert securities == expected_securities
 
@@ -174,13 +175,18 @@ def test_security_extraction_s3_warrant(get_s3_extractor, get_fake_messagebus, g
     securities = extractor.extract_securities(filing, company, bus, filing_text_doc)
     print("securities extracted: ", securities)
     assert all([isinstance(secu, model.Security) for secu in securities])
-    assert [secu.name for secu in securities] == [
-        "common stock",
+    expected_security_names = [
+        "preferred stock",
         "investor warrant",
         "placement agent warrant",
-        "preferred stock",
+        "warrant",
+        "common stock",
         ]
-
+    received_security_names = [secu.name for secu in securities]
+    assert len(expected_security_names) == len(received_security_names)
+    for each in expected_security_names:
+        assert each in received_security_names
+    
 def test_security_extraction_s3_ATM(get_s3_extractor, get_fake_messagebus, get_filing_s3_ATM):
     extractor: extractors.HTMS3Extractor = get_s3_extractor
     bus = get_fake_messagebus
@@ -191,25 +197,28 @@ def test_security_extraction_s3_ATM(get_s3_extractor, get_fake_messagebus, get_f
     securities = extractor.extract_securities(filing, company, bus, filing_text_doc)
     print("securities extracted: ", securities)
     assert all([isinstance(secu, model.Security) for secu in securities])
-    assert [secu.name for secu in securities] == [
+    received_security_names = [secu.name for secu in securities]
+    expected_security_names = [
         "common stock",
         "preferred stock",
         ]
+    received_security_names = [secu.name for secu in securities]
+    assert len(expected_security_names) == len(received_security_names)
+    for each in expected_security_names:
+        assert each in received_security_names
 
 
 def test_extract_shelf_s3(get_s3_extractor, get_fake_messagebus, get_filing_s3_shelf):
     extractor: extractors.HTMS3Extractor = get_s3_extractor
-    bus = get_fake_messagebus
+    bus: messagebus.MessageBus = get_fake_messagebus
     filing = get_filing_s3_shelf
     company = get_fake_company()
     company = extractor.extract_form_values(filing, company, bus)
-    expected_shelf = model.ShelfRegistration("000143774918017591", "1", "S-3", 75000000, datetime.date(2018, 9, 28))
-    # change these kind of calls to use the collect_commands
-    # of the message bus to assure we found the right items from
-    # the filing
     command_history = bus.collect_command_history()
-    print(command_history)
-    assert expected_shelf == list(company.shelfs)[0]
+    print("command_history:", command_history)
+    expected_shelf = model.ShelfRegistration("000143774918017591", "1", "S-3", 75000000, datetime.date(2018, 9, 28))
+    received_add_shelf_commands = [cmd.shelf_registration if isinstance(cmd, commands.AddShelfRegistration) else None for cmd in command_history]
+    assert expected_shelf in received_add_shelf_commands
 
 def test_extract_resale_s3(get_s3_extractor, get_fake_messagebus, get_filing_s3_resale):
     extractor: extractors.HTMS3Extractor = get_s3_extractor
@@ -217,26 +226,27 @@ def test_extract_resale_s3(get_s3_extractor, get_fake_messagebus, get_filing_s3_
     filing = get_filing_s3_resale
     company = get_fake_company()
     company = extractor.extract_form_values(filing, company, bus)
-    print(company.resales)
-    resale = company.get_resale(filing.accession_number)
+    command_history = bus.collect_command_history()
+    print("command_history:", command_history)
+    received_resale_registrations_from_commands = [cmd.resale_registration if isinstance(cmd, commands.AddResaleRegistration) else None for cmd in command_history]
     expected_resale = model.ResaleRegistration(**{
         "accn": filing.accession_number,
         "form_type": filing.form_type,
         "file_number": filing.file_number,
         "filing_date": filing.filing_date
     })
-    assert resale == expected_resale
+    assert expected_resale in received_resale_registrations_from_commands
 
-def test_extract_ATM_s3(get_s3_extractor, get_fake_messagebus, get_filing_s3_ATM, get_filing_s3_shelf):
+def test_extract_ATM_s3(get_s3_extractor, get_fake_messagebus, get_filing_s3_ATM):
     extractor: extractors.HTMS3Extractor = get_s3_extractor
     bus = get_fake_messagebus
     company = get_fake_company()
-    shelf_filing = get_filing_s3_shelf
-    company = extractor.extract_form_values(shelf_filing, company, bus)
+    # TODO: import fake data from a common place across all tests
+    company.add_shelf(model.ShelfRegistration("000143774918017591", "1", "S-3", 75000000, datetime.date(2018, 9, 28)))
     atm_filing = get_filing_s3_ATM
     company = extractor.extract_form_values(atm_filing, company, bus)
-    shelf = company.get_shelf(shelf_filing.file_number)
-    offering = shelf.get_offering_by_accn(atm_filing.accession_number)
+    command_history = bus.collect_command_history()
+    received_shelf_offering_from_commands = [cmd.shelf_offering if isinstance(cmd, commands.AddShelfOffering) else None for cmd in command_history]
     expected_offering = model.ShelfOffering(**{
         "offering_type": "ATM",
         "accn": atm_filing.accession_number,
@@ -244,36 +254,23 @@ def test_extract_ATM_s3(get_s3_extractor, get_fake_messagebus, get_filing_s3_ATM
         "commencment_date": datetime.date(2018, 9, 28),
         "end_date": datetime.date(2021, 9, 27)
     })
-    assert offering == expected_offering
+    assert expected_offering in received_shelf_offering_from_commands
     cover_page_doc = extractor.doc_from_section(atm_filing.get_section(re.compile("cover page")))
     aggregate_offering = extractor.extract_aggregate_offering_amount(cover_page_doc)
     expected_aggregate_offering = {'SECU': ['common stock'], 'amount': 75000000}
     assert aggregate_offering == expected_aggregate_offering
     
-def test_extract_form_values_s3(get_s3_extractor, get_fake_messagebus, get_filing_s3_shelf):
-    shelf_filing = get_filing_s3_shelf
-    extractor = get_s3_extractor
-    bus = get_fake_messagebus
-    company = get_fake_company()
-    try:
-        result = extractor.extract_form_values(shelf_filing, company, bus)
-    except Exception as e:
-        print(e)
-        assert 1 == 2
-    else:
-        assert isinstance(result, model.Company) is True
 
 def test_extract_form_values_effect(get_fake_messagebus, get_effect_extractor, get_effect_filing):
     extractor = get_effect_extractor
     filing = get_effect_filing
     bus = get_fake_messagebus
     company = get_fake_company()
-    result = extractor.extract_form_values(filing, company, bus)
-    print(result.effects)
-    assert (
-        model.EffectRegistration(accn='999999999522002596', file_number='333-265715', form_type="S-1", effective_date='2022-09-06')
-        in
-        result.effects)
+    extractor.extract_form_values(filing, company, bus)
+    command_history = bus.collect_command_history()
+    received_effect_registrations_from_commands = [cmd.effect_registration if isinstance(cmd, commands.AddEffectRegistration) else None for cmd in command_history]
+    expected_effect_registration = model.EffectRegistration(accn='999999999522002596', file_number='333-265715', form_type="S-1", effective_date='2022-09-06')
+    assert expected_effect_registration in received_effect_registrations_from_commands
 
         
 

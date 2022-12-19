@@ -144,7 +144,7 @@ def add_security_accn_occurence(cmd: commands.AddSecurityAccnOccurence, uow: Abs
         company: model.Company = u.company.get(symbol=cmd.symbol)
         security: model.Security = company.get_security_by_attributes(cmd.security_attributes)
         if security:
-            occurence = model.SecurityAccnOccurence(security.id, cmd.filing_accn)
+            occurence = model.SecurityAccnOccurence(security.id, cmd.accn)
             u.session.add(occurence)
             u.commit()
         else:

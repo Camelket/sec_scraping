@@ -21,6 +21,10 @@ class SecuritiesCommand(NeedCompanyCommand):
     name: str
 
 @dataclass
+class SecurityAttributesCommand(NeedCompanyCommand):
+    attributes: dict
+
+@dataclass
 class AddSic(Command):
     sic: model.Sic
 
@@ -32,11 +36,9 @@ class AddFormType(Command):
 class AddFilingLinks(NeedCompanyCommand):
     filing_links: list[model.FilingLink]
 
-
 @dataclass
 class AddCompany(Command):
     company: model.Company
-
 
 @dataclass
 class AddSecurities(NeedCompanyCommand):
@@ -45,7 +47,7 @@ class AddSecurities(NeedCompanyCommand):
 @dataclass
 class AddSecurityAccnOccurence(NeedCompanyCommand):
     security_attributes: dict
-    filing_accn: str
+    accn: str
 
 @dataclass
 class AddShelfRegistration(NeedCompanyCommand):
@@ -69,7 +71,7 @@ class AddShelfSecurityRegistration(NeedCompanyCommand):
     security_registration: model.ShelfSecurityRegistration
 
 @dataclass
-class AddOutstandingSecurityFact(SecuritiesCommand):
+class AddOutstandingSecurityFact(SecurityAttributesCommand):
     outstanding: list[model.SecurityOutstanding]
 
 
