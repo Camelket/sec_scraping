@@ -944,7 +944,6 @@ def _add_SECU_ent(matcher, doc: Doc, i: int, matches):
 def _add_SECUATTR_ent(matcher, doc: Doc, i: int, matches):
     _add_ent(doc, i, matches, "SECUATTR")
 
-
 def _add_CONTRACT_ent(matcher, doc: Doc, i: int, matches):
     _add_ent(
         doc,
@@ -953,7 +952,6 @@ def _add_CONTRACT_ent(matcher, doc: Doc, i: int, matches):
         "CONTRACT",
         adjust_ent_before_add_callback=adjust_CONTRACT_ent_before_add,
     )
-
 
 def adjust_CONTRACT_ent_before_add(entity: Span):
     logger.debug(f"adjust_contract_ent_before_add entity before adjust: {entity}")
@@ -1049,6 +1047,7 @@ def _add_ent(
         entity = Span(doc, start, end, label=ent_label)
         if adjust_ent_before_add_callback is not None:
             entity = adjust_ent_before_add_callback(entity)
+            start, end = entity.start, entity.end
             if not isinstance(entity, Span):
                 raise TypeError(f"entity should be a Span, got: {entity}")
         if ent_exclude_condition is not None:
@@ -1161,6 +1160,7 @@ def _get_singular_or_plural_of_SECU_token(token):
         return singular
 
 
+# TODO: rename to something more accurate and unambigious
 class AgreementMatcher:
     """
     What do i want to tag?
@@ -1169,7 +1169,6 @@ class AgreementMatcher:
         how else could the context of origin be present in a filing?
     """
 
-    # change the name to something more fitting, also adjust the Language.factory for name
     def __init__(self, vocab):
         self.vocab = vocab
         self.matcher = Matcher(vocab)
@@ -1178,12 +1177,11 @@ class AgreementMatcher:
     def add_CONTRACT_ent_to_matcher(self):
         patterns = [
             [{"LOWER": "agreement"}],
+            [{"LOWER": "private"}, {"LOWER": "placement"}]
         ]
         self.matcher.add("contract", patterns, on_match=_add_CONTRACT_ent)
 
-    def add_PLACEMENT_ent_to_matcher(self):
-        pass
-
+   
     def __call__(self, doc: Doc):
         self.matcher(doc)
         return doc
@@ -1223,10 +1221,6 @@ def create_common_financial_retokenizer(nlp, name):
 @Language.factory("agreement_matcher")
 def create_agreement_matcher(nlp, name):
     return AgreementMatcher(nlp.vocab)
-
-
-
-
 
 
 
