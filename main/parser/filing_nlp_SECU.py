@@ -212,6 +212,7 @@ class SECU:
     def _date_relation_attr_with_subset_of_pattern(
         self, valid_patterns: list[dict[str, set]], attr: str = "lemmas"
     ):
+    # FIXME: adjust for addition of DatetimeRelation instead of before used dict -> just access the attribute 
         """
         valid_patterns:
         [
@@ -222,7 +223,7 @@ class SECU:
             ...
         ]
         """
-        matches = set()
+        matches = list()
         for date_relation in self.date_relations["datetime"]:
             if not getattr(date_relation, attr):
                 continue
@@ -238,7 +239,7 @@ class SECU:
                     continue
                 if all([attrs[key].issubset(pattern[key]) for key in keys_to_check]):
                     if date_relation not in matches:
-                        matches.add(date_relation)
+                        matches.append(date_relation)
         return matches
 
     def _get_exercise_datetime_relation(self):

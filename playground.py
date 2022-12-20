@@ -1703,7 +1703,7 @@ if __name__ == "__main__":
     #     "On April 20, 2022, we had sold 10000 shares of our common stock at a purchase price of 2$ per share through a private placement.",
     #     "On April 20, 2022, we issued 10000 shares of our common stock at a price of 2$ per share through the placement agent.",
     #     ])
-    
+    displacy_dep_with_search("We entered into an Agreement with Cerosa Inc. on May 5, 2021, pursuant to which we issued 5000 shares of common stock.")
     # need to check the quantity relations for existance of: daterelation, amount, amods of parent secu and quant 
     # displacy_dep_with_search("The common stock outstanding after the offering is based on 113,299,612 shares of our common stock outstanding as of December 31, 2019 and the sale of 36,057,692 shares of our common stock at an assumed offering price of $2.08 per share, the last reported sale price of our common stock on the NASDAQ on March 16, 2020 and excludes the following")
 # get text only of filing

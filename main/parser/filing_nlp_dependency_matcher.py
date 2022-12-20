@@ -567,7 +567,10 @@ class SecurityDependencyAttributeMatcher(DependencyAttributeMatcher):
         return result if len(result) != 0 else None
 
     def _get_date_relation_through_root_verb(self, token: Token) -> list[Span]:
-        root_verb = self.get_root_verb(token)
+        if token.sent.root == token:
+            root_verb = token
+        else:
+            root_verb = self.get_root_verb(token)
         result = []
         if root_verb:
             anchor_pattern = self._get_anchor_pattern(root_verb)

@@ -53,10 +53,10 @@ class DatetimeRelation(DatefulRelation):
     def __eq__(self, other):
         if isinstance(other, DatetimeRelation):
             if (
-                (self.spacy_date == other.spacy_date)
-                and (self.timestamp == other.timestamp)
-                and (self.lemmas == other.lemmas)
-                and (self.context == other.context)
+                (self.spacy_date == other.spacy_date) and
+                (self.timestamp == other.timestamp) and
+                (self.lemmas == other.lemmas) and
+                (self.context == other.context)
             ):
                 return True
         return False

@@ -57,7 +57,7 @@ class TestDependencyAttributeMatcher:
             {"LEFT_ID": "two", "REL_OP": ">", "RIGHT_ID": "three", "RIGHT_ATTRS": {"LOWER": "sentence"}},
             {"LEFT_ID": "three", "REL_OP": ">", "RIGHT_ID": "four", "RIGHT_ATTRS": {"LOWER": "test"}},
         ]
-        matches = search.dep_getter.get_candidate_matches(pattern)
+        matches = search.secu_attr_getter.get_candidate_matches(pattern)
         assert len(matches) == 1
         expected_tokens = [doc[0], doc[1], doc[4], doc[3]]
         found_tokens = [i[0] for i in matches[0]]
@@ -74,7 +74,7 @@ class TestDependencyAttributeMatcher:
             {"LEFT_ID": "three", "REL_OP": ">", "RIGHT_ID": "four", "RIGHT_ATTRS": {"LOWER": "test"}},
             {"LEFT_ID": "three", "REL_OP": ">", "RIGHT_ID": "five", "RIGHT_ATTRS": {"LOWER": "for"}},
         ]
-        matches = search.dep_getter.get_candidate_matches(pattern)
+        matches = search.secu_attr_getter.get_candidate_matches(pattern)
         assert len(matches) == 1
         expected_tokens = [doc[0], doc[1], doc[4], doc[3], doc[5]]
         found_tokens = [i[0] for i in matches[0]]
@@ -100,7 +100,7 @@ class TestDependencyAttributeMatcher:
     def test_get_root_verb(self, input, expected, origin_idx, get_search):
         search = get_search
         doc = search.nlp(input)
-        match = search.dep_getter.get_root_verb(doc[origin_idx])
+        match = search.secu_attr_getter.get_root_verb(doc[origin_idx])
         assert match.text == expected
     
     @pytest.mark.parametrize(["input", "expected", "origin_idx"], [
@@ -113,38 +113,63 @@ class TestDependencyAttributeMatcher:
     def test_get_parent_verb(self, input, expected, origin_idx, get_search):
         search = get_search
         doc = search.nlp(input)
-        match = search.dep_getter.get_parent_verb(doc[origin_idx])
+        match = search.secu_attr_getter.get_parent_verb(doc[origin_idx])
         assert match.text == expected
 
-    def test_get_quantities(self):
-        pass
-    
     @pytest.mark.parametrize(["input", "expected", "origin_idx"], [
         (
-            "",
-            "",
-            0
+            "We are to purchase the 1000 warrants at 1$ per warrant.",
+            [1000],
+            6
         ),
+        (
+            "Pursuant to the previous Agreement, we will receive a compensation, either 10000 shares of common stock or 10 shares of Series C preferred stock, upon early redemption of the Senior Notes issued in the Agreement.",
+            [10000],
+            14
+        )
     ])
-    def test_get_expiry(self, input, expected, origin_idx, get_search):
-        search = get_search
+    def test_get_quantities(self, input: str, expected: list[float], origin_idx: int, get_search):
+        search: SpacyFilingTextSearch = get_search
         doc = search.nlp(input)
-        match = search.dep_getter.get_expiry(doc[origin_idx])
-        assert match == expected
+        match = search.secu_attr_getter.get_quantities(doc[origin_idx])
+        assert match is not None
+        received_floats = [i._.secuquantity for i in match]
+        for f in expected:
+            assert f in received_floats
+        
+    
     
     #FIXME: adjust for new context format when decided on which to use
     @pytest.mark.parametrize(["input", "expected", "origin_idx"], [
         (
             "The warrants we issued pursuant to our Private Placement are exercisable as of May 5, 2021.",
-            {"datetime": datetime.date(2021, 5, 5), "timedelta": []},
+            {"datetime": [datetime.date(2021, 5, 5)], "timedelta": []},
             1
         ),
+        (
+            "On May 5th, 2021, we entered into an Agreement with Cerosa Inc., pursuant to which we issued 5000 shares of common stock.",
+            {"datetime": [datetime.date(2021, 5, 5)], "timedelta": []},
+            4
+        ),
+        (
+            "We entered into an Agreement with Cerosa Inc. on May 5, 2021, pursuant to which we issued 5000 shares of common stock.",
+            {"datetime": [datetime.date(2021, 5, 5)], "timedelta": []},
+            1
+        )
     ])
     def test_get_date_relation(self, input, expected, origin_idx, get_search):
-        search = get_search
+        search: SpacyFilingTextSearch = get_search
         doc = search.nlp(input)
-        match = search.dep_getter.get_date_relation(doc[origin_idx])
-        assert match == expected
+        match = search.secu_attr_getter.get_date_relation(doc[origin_idx])
+        match_datetimes = [m.timestamp.date() for m in match["datetime"]]
+        expected_datetimes = expected["datetime"]
+        for each in expected_datetimes:
+            assert each in match_datetimes
+        expected_timedeltas = expected["timedelta"]
+        match_timedeltas = match["timedelta"]
+        for each in expected_timedeltas:
+            assert each in match_timedeltas
+        
     
     @pytest.mark.parametrize(["input", "expected", "secu_idx"], [
         (
@@ -181,7 +206,7 @@ class TestDependencyAttributeMatcher:
     def test_get_exercise_price(self, input, expected, secu_idx, get_search):
         search = get_search
         doc = search.nlp(input)
-        match = search.dep_getter.get_exercise_price(doc[secu_idx])
+        match = search.secu_attr_getter.get_exercise_price(doc[secu_idx])
         print(match)
         assert match == expected
         
@@ -202,7 +227,8 @@ class TestSECUMatcher:
         nlp.add_pipe("secu_matcher")
         doc = nlp("The Common stock, Series A Preferred stock and the Series C Warrants of company xyz is fairly valued.")
         secus = [i.text for i in filter(lambda x: x.ent_type_ == "SECU", doc)]
-        assert secus == ['Common', 'stock', 'Series', 'A', 'Preferred', 'stock', 'Series', 'C', 'Warrants']
+        print(secus)
+        assert secus == ['Common stock', 'Series A Preferred stock', 'Series C Warrants']
 
 class TestSECUQuantityMatcher:
 

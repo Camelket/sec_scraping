@@ -48,6 +48,13 @@ class UnclearInformationExtraction(Exception):
 
 
 class CommonFinancialRetokenizer:
+    '''
+    matches and retokenizes common used words in financial texts which otherwise get wrong tags.
+    for now only affects "par value"
+    
+    SideEffect:
+        indices shift, so place component at the beginning of the pipeline.
+    '''
     def __init__(self, vocab):
         pass
 
@@ -105,6 +112,13 @@ class FilingsSecurityLawRetokenizer:
 
 
 class SecurityActMatcher:
+    '''
+    This component matches the usual pattern of security acts present in SEC filings
+    and retokenizes the tokens into one, for easier matching in other components.
+
+    Sideeffect:
+        shift of indices, so place this component at the beginning of the pipeline.
+    '''
     def __init__(self, vocab):
         if not Token.has_extension("sec_act"):
             Token.set_extension("sec_act", default=False)
@@ -444,52 +458,18 @@ def _set_extension(cls, name, kwargs):
     if not cls.has_extension(name):
         cls.set_extension(name, **kwargs)
 
-def set_SECUMatcher_extensions():
-    token_extensions = [
-        {"name": "source_span_unmerged", "kwargs": {"default": None}},
-        {"name": "was_merged", "kwargs": {"default": False}},
-        {"name": "secuquantity", "kwargs": {"getter": get_token_secuquantity_float}},
-        {"name": "secuquantity_unit", "kwargs": {"default": None}},
-        {"name": "amods", "kwargs": {"getter": token_amods_getter}},
-        {"name": "nsubjpass", "kwargs": {"getter": token_nsubjpass_getter}},
-        {"name": "adj", "kwargs": {"getter": token_adj_getter}},
-        {
-            "name": "premerge_tokens",
-            "kwargs": {"getter": get_premerge_tokens_for_token},
-        },
-        {"name": "secu_key", "kwargs": {"getter": get_secu_key_extension}},
-        {"name": "negated", "kwargs": {"default": False}},
-    ]
-    span_extensions = [
-        {"name": "secuquantity", "kwargs": {"getter": get_span_secuquantity_float}},
-        {"name": "secuquantity_unit", "kwargs": {"default": None}},
-        {"name": "secu_key", "kwargs": {"getter": get_secu_key_extension}},
-        {"name": "amods", "kwargs": {"getter": span_amods_getter}},
-        {"name": "premerge_tokens", "kwargs": {"getter": get_premerge_tokens_for_span}},
-        {"name": "was_merged", "kwargs": {"default": False}},
-    ]
-    doc_extensions = [
-        {"name": "alias_list", "kwargs": {"default": list()}},
-        {"name": "tokens_to_alias_map", "kwargs": {"default": dict()}},
-        {"name": "single_secu_alias", "kwargs": {"default": dict()}},
-        {"name": "single_secu_alias_tuples", "kwargs": {"default": dict()}},
-        {"name": "is_alias", "kwargs": {"method": is_alias}},
-        {"name": "get_alias", "kwargs": {"method": get_alias}},
-        {"name": "secus", "kwargs": {"getter": _get_SECU_in_doc}},
-    ]
-
-    for each in span_extensions:
-        _set_extension(Span, each["name"], each["kwargs"])
-    for each in doc_extensions:
-        _set_extension(Doc, each["name"], each["kwargs"])
-    for each in token_extensions:
-        _set_extension(Token, each["name"], each["kwargs"])
-
 
 class SECUQuantityMatcher:
     '''
-    This component will mark qunatities associated with SECU entities.
-    Sets ._.secuquantity and ._.secuquantity_unit extensions on Tokens and Spans.
+    This component will mark quantities associated with SECU entities.
+    Custom extension attributes added with this component:
+        Token extensions:
+            - ._.secuquantity (easy access to underlying value as a float)
+            - ._.secuquantity_unit (type of unit associated with the quantity, either MONEY or COUNT)
+        Span extensions:
+            - ._.secuquantity (easy access to underlying value as a float)
+            - ._.secuquantity_unit (type of unit associated with the quantity, either MONEY or COUNT)
+    
     This component needs to be placed after the SECUMatcher component or
     a custom component which adds SECU entities to the doc and sets the needed
     Span and Token extensions.
@@ -498,7 +478,23 @@ class SECUQuantityMatcher:
     def __init__(self, vocab):
         self.vocab = vocab
         self.matcher = Matcher(vocab)
+        self._set_needed_extensions()
         self.add_SECUQUANTITY_ent_to_matcher(self.matcher)
+    
+    
+    def _set_needed_extensions(self):
+        token_extensions = [
+            {"name": "secuquantity", "kwargs": {"getter": get_token_secuquantity_float}},
+            {"name": "secuquantity_unit", "kwargs": {"default": None}},
+        ]
+        span_extensions = [
+            {"name": "secuquantity", "kwargs": {"getter": get_span_secuquantity_float}},
+            {"name": "secuquantity_unit", "kwargs": {"default": None}},
+        ]
+        for each in span_extensions:
+            _set_extension(Span, each["name"], each["kwargs"])
+        for each in token_extensions:
+            _set_extension(Token, each["name"], each["kwargs"])
     
     def add_SECUQUANTITY_ent_to_matcher(self, matcher: Matcher):
         matcher.add(
@@ -609,14 +605,42 @@ class SECUObjectMapper:
 
 
 class SECUMatcher:
+    '''
+    This component adds SECU, SECUREF and SECUATTR entities.
+
+    Custom extension attributes added with this component:
+        Doc extensions:
+            - ._.alias_list (set of aliases in doc as string eg: alias.text)
+            - ._.tokens_to_alias_map (maps children token.i to parent alias span)
+            - ._.single_secu_alias (?)
+            - ._.single_secu_alias_tuples (aliases and no alias SECU's grouped by secu_key)
+            - ._.is_alias (method, check wether this token is an alias to another token or not)
+            - ._.get_alias (method, get aliases to the specified token)
+            - ._.secus (helper to get all SECU ents)
+        Span extensions:
+            - ._.premerge_tokens (tokens before retokenization)
+            - ._.was_merged (were any tokens in the Span retokenized)
+            - ._.secu_key (string key to identify securities across singular and plural, WIP)
+            - ._.amods (amods close in the dependency tree, according to patterns in filing_nlp_patterns.py)
+        Token extensions:
+            - ._.was_merged (is this token the result of retokenization)
+            - ._.premerge_tokens (tokens before retokenization)
+            - ._.source_span_unmerged (helper for ._.premerge_tokens)
+            - ._.secu_key (string key to identify securities across singular and plural, WIP)
+            - ._.amods (amods close in the dependency tree, according to patterns in filing_nlp_patterns.py)
+            - ._.nsubjpass (nsubjpass were this token is the origin)
+            - ._.adj (adjectives close in the dependency tree, according to patterns in filing_nlp_patterns.py)
+
+    SideEffect:
+        Indices shift, so place component as early as possible and after all other components which shift indices.
+        Overwrites previously set entities if they conflict with SECU, SECUREF or SECUATTR
+    '''
     def __init__(self, vocab):
         self.vocab = vocab
         self.matcher_SECU = Matcher(vocab)
         self.matcher_SECUREF = Matcher(vocab)
         self.matcher_SECUATTR = Matcher(vocab)
-
-        set_SECUMatcher_extensions()
-
+        self._set_needed_extensions()
         self.add_SECU_ent_to_matcher(self.matcher_SECU)
         self.add_SECUREF_ent_to_matcher(self.matcher_SECUREF)
         self.add_SECUATTR_ent_to_matcher(self.matcher_SECUATTR)
@@ -634,6 +658,39 @@ class SECUMatcher:
         doc = self.handle_retokenize_SECU(doc)
         self.matcher_SECUATTR(doc)
         return doc
+    
+    def _set_needed_extensions(self):
+        token_extensions = [
+            {"name": "source_span_unmerged", "kwargs": {"default": None}},
+            {"name": "was_merged", "kwargs": {"default": False}},
+            {"name": "amods", "kwargs": {"getter": token_amods_getter}},
+            {"name": "nsubjpass", "kwargs": {"getter": token_nsubjpass_getter}},
+            {"name": "adj", "kwargs": {"getter": token_adj_getter}},
+            {"name": "premerge_tokens", "kwargs": {"getter": get_premerge_tokens_for_token}},
+            {"name": "secu_key", "kwargs": {"getter": get_secu_key_extension}},
+        ]
+        span_extensions = [
+            {"name": "secu_key", "kwargs": {"getter": get_secu_key_extension}},
+            {"name": "amods", "kwargs": {"getter": span_amods_getter}},
+            {"name": "premerge_tokens", "kwargs": {"getter": get_premerge_tokens_for_span}},
+            {"name": "was_merged", "kwargs": {"default": False}},
+        ]
+        doc_extensions = [
+            {"name": "alias_list", "kwargs": {"default": list()}},
+            {"name": "tokens_to_alias_map", "kwargs": {"default": dict()}},
+            {"name": "single_secu_alias", "kwargs": {"default": dict()}},
+            {"name": "single_secu_alias_tuples", "kwargs": {"default": dict()}},
+            {"name": "is_alias", "kwargs": {"method": is_alias}},
+            {"name": "get_alias", "kwargs": {"method": get_alias}},
+            {"name": "secus", "kwargs": {"getter": _get_SECU_in_doc}},
+        ]
+
+        for each in span_extensions:
+            _set_extension(Span, each["name"], each["kwargs"])
+        for each in doc_extensions:
+            _set_extension(Doc, each["name"], each["kwargs"])
+        for each in token_extensions:
+            _set_extension(Token, each["name"], each["kwargs"])
 
     def handle_retokenize_SECU(self, doc: Doc):
         doc = retokenize_SECU(doc)

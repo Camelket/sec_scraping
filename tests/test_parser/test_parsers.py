@@ -52,14 +52,16 @@ def test_s3_splitting_by_toc_hrefs():
     doc = parser.get_doc(s3_path)
     sections = parser._split_by_table_of_contents_based_on_hrefs(parser.make_soup(doc))
     print(sections)
+    #TODO: implement test for toc_href splitting
     assert 1 == 2
 
-# @pytest.mark.parser_splitting
+
 def test_s3_splitting_by_toc_headers():
     s3_path = _get_absolute_path(s3_rel_path)
     parser = HTMFilingParser()
     doc = parser.get_doc(s3_path)
     sections = parser._split_by_table_of_content_based_on_headers(parser.make_soup(doc))
+    #TODO: implement test for toc_header splitting
 
 def test_s3_filing_creation2():
     path = _get_absolute_path(s3_shelf)

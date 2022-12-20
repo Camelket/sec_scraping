@@ -385,7 +385,7 @@ def test_live_get_security_from_company_by_attributes(get_bootstrapped_dilution_
         u.commit()
     with uow as u:
         company = u.company.get(symbol=fake_company["symbol"])
-        security = company.get_security_by_attributes("common stock", {"name": "common stock"})
+        security = company.get_security_by_attributes({"name": "common stock"})
         assert security.name == "common stock"
 
 def test_live_add_securityaccnoccurence(get_bootstrapped_dilution_db):
@@ -406,7 +406,7 @@ def test_live_add_securityaccnoccurence(get_bootstrapped_dilution_db):
     )
     with uow as u:
         company = u.company.get(symbol=fake_company["symbol"])
-        security = company.get_security_by_attributes("common stock", {"name": "common stock"})
+        security = company.get_security_by_attributes({"name": "common stock"})
         occurence = model.SecurityAccnOccurence(security.id, fake_filing_link["accn"])
         u.session.add(occurence)
         u.commit()
@@ -619,7 +619,7 @@ class TestHandlers():
         cmd = commands.AddOutstandingSecurityFact(
             fake_company["cik"],
             fake_company["symbol"],
-            "common stock",
+            {"name": "common stock"},
             [outstanding]
         )
         db.bus.handle(cmd)
@@ -640,7 +640,7 @@ class TestHandlers():
             cik=fake_company["cik"],
             symbol=fake_company["symbol"],
             security_attributes={"name": fake_common_stock["name"]},
-            filing_accn=fake_filing_link["accn"]
+            accn=fake_filing_link["accn"]
         )
         db.bus.handle(cmd)
         with uow as u:

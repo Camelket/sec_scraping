@@ -11,6 +11,10 @@ def test_spacy_token_to_number_conversion():
     assert w2n.convert_spacy_token(token) == 1
 
 def test_spacy_token_to_timedelta_conversion():
-    token = [t for t in text_search.nlp("five weeks")][1]
-    assert w2n.convert_spacy_token(token) == timedelta(weeks=5)
+    tokens = [t for t in text_search.nlp("five weeks")]
+    p1 = w2n.convert_spacy_token(tokens[0])
+    p2 = w2n.convert_spacy_token(tokens[1])
+    assert p2 == timedelta(weeks=1)
+    assert p1 == 5
+    assert p1*p2 == timedelta(weeks=5)
 

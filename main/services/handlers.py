@@ -128,7 +128,7 @@ def add_effect_registration(cmd: commands.AddEffectRegistration, uow: AbstractUn
 def add_outstanding_security_fact(cmd: commands.AddOutstandingSecurityFact, uow: AbstractUnitOfWork):
     with uow as u:
         company: model.Company = u.company.get(symbol=cmd.symbol)
-        security: model.Security = company.get_security_by_name(cmd.name)
+        security: model.Security = company.get_security_by_attributes(cmd.attributes)
         if security:
             for outstanding in cmd.outstanding:
                 local_outstanding = u.session.merge(outstanding)
