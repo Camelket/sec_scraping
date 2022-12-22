@@ -15,7 +15,6 @@ from main.parser.filing_nlp_utils import (
     MatchFormater,
     get_dep_distance_between_spans,
     get_span_distance,
-    extend_token_ent_to_span,
 )
 from main.parser.filing_nlp_certainty_setter import create_certainty_setter
 from main.parser.filing_nlp_negation_setter import create_negation_setter
@@ -41,6 +40,45 @@ from main.parser.filing_nlp_SECU import SECU, SECUQuantity, UnitAmount, Quantity
 
 logger = logging.getLogger(__name__)
 formater = MatchFormater()
+
+class AliasCache:
+    '''
+    This is to keep track of alias assignment acros AliasSetter Components.
+    restrictions:
+        No overlapping aliases
+    '''
+    def __init__(self):
+        self._alias_i_map: dict[int, tuple[int, int]] = defaultdict(dict)
+        self._sent_alias_map: dict[tuple[int, int], list[tuple[int, int]]] = defaultdict(list)
+        self._already_assigned_aliases: set[tuple[int, int]] = defaultdict(set)
+        self._alias_assignment: dict[tuple[int, int], tuple[int, int]] = defaultdict(dict)
+        self._alias_assigned_by_component_map = dict[tuple[int, int], str]
+        self._unassigned_aliases: set[tuple[int, int]]
+    
+    def add_alias(self, alias: Token|Span):
+        if isinstance(alias, Token):
+            start_idx = alias.i
+            end_idx = alias.i
+            sent_start = alias.sent[0].i
+            sent_end = alias.sent[-1].i
+        if isinstance(alias, Span):
+            start_idx = alias.start
+            end_idx = alias.end
+            sent_start = alias[0].sent[0].i
+            sent_end = alias[0].sent[-1].i
+        alias_tuple = tuple(start_idx, end_idx)
+        for x in range(start_idx, end_idx+1):
+            self._alias_i_map[x] = alias_tuple
+        self._sent_alias_map[tuple(sent_start, sent_end)].append(alias_tuple)
+
+    def _assign_alias(self, alias_tuple: tuple[int, int], origin_tuple: tuple[int, int]):
+        if alias_tuple not in self._unassigned_aliases:
+            if alias_tuple in self._already_assigned_aliases:
+                logger.warning(f"This alias_tuple:{alias_tuple} already is assigned to an origin:{self._alias_assignment[alias_tuple]}")
+
+        
+
+    
 
 
 class UnclearInformationExtraction(Exception):
