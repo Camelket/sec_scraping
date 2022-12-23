@@ -43,38 +43,119 @@ formater = MatchFormater()
 
 class AliasCache:
     '''
-    This is to keep track of alias assignment acros AliasSetter Components.
+    This is to keep track of alias assignment across AliasSetter Components.
+    Custom extensions added:
+        Doc extensions:
+            ??
+    Usage:
+        Create instance of this class and pass to AliasSetter components through config on creation.
+        In the AliasSetter Component:
+            1) add a possible alias through add_alias
+            2) determine if a possible alias has an origin
+            3) add the alias, origin and similarity_score through assign_alias
+
     restrictions:
-        No overlapping aliases
+        No overlapping aliases.
     '''
     def __init__(self):
-        self._alias_i_map: dict[int, tuple[int, int]] = defaultdict(dict)
+        self._idx_alias_map: dict[int, tuple[int, int]] = dict()
         self._sent_alias_map: dict[tuple[int, int], list[tuple[int, int]]] = defaultdict(list)
-        self._already_assigned_aliases: set[tuple[int, int]] = defaultdict(set)
-        self._alias_assignment: dict[tuple[int, int], tuple[int, int]] = defaultdict(dict)
-        self._alias_assigned_by_component_map = dict[tuple[int, int], str]
-        self._unassigned_aliases: set[tuple[int, int]]
+        self._alias_sent_map: dict[tuple[int, int], tuple[int, int]] = dict()
+        self._already_assigned_aliases: set[tuple[int, int]] = set()
+        self._alias_assignment: dict[tuple[int, int], tuple[int, int]] = dict()
+        self._origin_alias_map: dict[tuple[int, int], list[tuple[int, int]]] = defaultdict(list)
+        self._alias_assignment_score: dict[tuple[int, int], float] = dict()
+        self._unassigned_aliases: set[tuple[int, int]] = set()
     
     def add_alias(self, alias: Token|Span):
-        if isinstance(alias, Token):
-            start_idx = alias.i
-            end_idx = alias.i
-            sent_start = alias.sent[0].i
-            sent_end = alias.sent[-1].i
-        if isinstance(alias, Span):
-            start_idx = alias.start
-            end_idx = alias.end
-            sent_start = alias[0].sent[0].i
-            sent_end = alias[0].sent[-1].i
-        alias_tuple = tuple(start_idx, end_idx)
-        for x in range(start_idx, end_idx+1):
-            self._alias_i_map[x] = alias_tuple
-        self._sent_alias_map[tuple(sent_start, sent_end)].append(alias_tuple)
+        '''Add an alias to the map of aliases. No assignment happens here.'''
+        alias_tuple = self._get_start_end_tuple(alias)
+        for x in range(alias_tuple[0], alias_tuple[1]+1):
+            self._idx_alias_map[x] = alias_tuple
+        sent_start_end = self._get_sent_start_end_tuple(alias)
+        self._sent_alias_map[sent_start_end].append(alias_tuple)
+        self._alias_sent_map[alias_tuple] = sent_start_end
+    
+    def assign_alias(self, alias: Token|Span, origin: Token|Span, score: float):
+        '''Assign an alias to an origin and set the similarity_score of the alias to the origin.'''
+        alias_tuple = self._get_start_end_tuple(alias)
+        origin_tuple = self._get_sent_start_end_tuple(origin)
+        self._assign_alias(alias_tuple, origin_tuple, score)
+    
+    def unassign_alias(self, alias: Token|Span):
+        '''Remove the link between alias and origin and put the alias into an unassigned state'''
+        alias_tuple = self._get_start_end_tuple(alias)
+        self._unassign_alias(alias_tuple)
 
-    def _assign_alias(self, alias_tuple: tuple[int, int], origin_tuple: tuple[int, int]):
+    def remove_alias(self, alias: Token|Span):
+        '''Remove the alias completely (needs to be added again, alias loses assignment to origin)'''
+        alias_tuple = self._get_start_end_tuple(alias)
+        self._remove_alias(alias_tuple)
+    
+    def _unassign_alias(self, alias_tuple: tuple[int, int]):
+        if alias_tuple in self._already_assigned_aliases:
+            # first remove assignments in orign to alias map
+            self._remove_alias_tuple_from_origin_alias_map(alias_tuple)
+            self._alias_assignment.pop(alias_tuple)
+            self._alias_assignment_score.pop(alias_tuple)
+            self._unassigned_aliases.add(alias_tuple)
+
+    def _remove_alias_tuple_from_origin_alias_map(self, alias_tuple):
+        origin_tuple = self._alias_assignment[alias_tuple]
+        idx_to_remove = None
+        for idx, each in self._origin_alias_map[origin_tuple]:
+            if each == alias_tuple:
+                idx_to_remove = idx
+                break
+        if idx_to_remove is not None:
+            self._origin_alias_map[origin_tuple].pop(idx_to_remove)
+    
+    def _remove_alias(self, alias_tuple: tuple[int, int]):
+        self._unassign_alias(alias_tuple)
+        for x in range(alias_tuple[0], alias_tuple[1]+1):
+            self._idx_alias_map.pop(x)
+        self._remove_alias_tuple_from_sent_alias_map(alias_tuple)
+        self._alias_sent_map.pop(alias_tuple)
+
+    def _remove_alias_tuple_from_sent_alias_map(self, alias_tuple):
+        idx_to_remove = None
+        for idx, each in self._sent_alias_map[self._alias_sent_map[alias_tuple]]:
+            if each == alias_tuple:
+                idx_to_remove = idx
+                break
+        if idx_to_remove is not None:
+            self._sent_alias_map[self._alias_sent_map[alias_tuple]].pop(idx_to_remove)
+
+    def _assign_alias(self, alias_tuple: tuple[int, int], origin_tuple: tuple[int, int], score: float):
         if alias_tuple not in self._unassigned_aliases:
             if alias_tuple in self._already_assigned_aliases:
                 logger.warning(f"This alias_tuple:{alias_tuple} already is assigned to an origin:{self._alias_assignment[alias_tuple]}")
+            else:
+                logger.warning(f"This alias_tuple:{alias_tuple} wasn't added yet. Use add_alias to add the alias before assigning the alias_tuple.")
+        else:
+            self._unassigned_aliases.remove(alias_tuple)
+            self._alias_assignment[alias_tuple] = origin_tuple
+            self._alias_assignment_score = score
+            self._origin_alias_map[origin_tuple].append(alias_tuple)
+    
+    def _get_start_end_tuple(self, alias: Token|Span):
+        if isinstance(alias, Token):
+            start_idx = alias.i
+            end_idx = alias.i
+        if isinstance(alias, Span):
+            start_idx = alias.start
+            end_idx = alias.end
+        return tuple(start_idx, end_idx)
+    
+    def _get_sent_start_end_tuple(self, alias: Token|Span):
+        if isinstance(alias, Token):
+            sent_start = alias.sent[0].i
+            sent_end = alias.sent[-1].i
+        if isinstance(alias, Span):
+            sent_start = alias[0].sent[0].i
+            sent_end = alias[0].sent[-1].i
+        return tuple(sent_start, sent_end)
+
 
         
 

@@ -14,6 +14,7 @@ cython = "*"
 scalene = "*"
 
 [dev-packages]
+ipykernel = "*"
 
 [requires]
 python_version = "3.10"

@@ -1703,7 +1703,15 @@ if __name__ == "__main__":
     #     "On April 20, 2022, we had sold 10000 shares of our common stock at a purchase price of 2$ per share through a private placement.",
     #     "On April 20, 2022, we issued 10000 shares of our common stock at a price of 2$ per share through the placement agent.",
     #     ])
-    displacy_dep_with_search("We entered into an Agreement with Cerosa Inc. on May 5, 2021, pursuant to which we issued 5000 shares of common stock.")
+    # displacy_dep_with_search("We entered into an Agreement with Cerosa Inc. on May 5, 2021, pursuant to which we issued 5000 shares of common stock.")
+    alias_test_text = "On February 22, 2021, we entered into the Securities Purchase Agreement (the “Securities Purchase Agreement”), pursuant to which we agreed to issue the investor named therein (the “Investor”) 8,888,890 shares (the “Shares”) of our common stock, par value $0.000001 per share, at a purchase price of $2.25 per share, and a warrant to purchase up to 6,666,668 shares of our common stock (the “Investor Warrant”) in a private placement (the “Private Placement”). The closing of the Private Placement occurred on February 24, 2021."
+    from main.parser.filing_nlp_alias_setter import AliasMatcher
+    import spacy
+    nlp = spacy.load("en_core_web_lg")
+    doc = nlp(alias_test_text)
+    alias_matcher = AliasMatcher(nlp.vocab)
+    alias_matcher.chars_to_tokens_map = alias_matcher._get_chars_to_tokens_map(doc)
+    print(alias_matcher.get_base_alias_spans(doc))
     # need to check the quantity relations for existance of: daterelation, amount, amods of parent secu and quant 
     # displacy_dep_with_search("The common stock outstanding after the offering is based on 113,299,612 shares of our common stock outstanding as of December 31, 2019 and the sale of 36,057,692 shares of our common stock at an assumed offering price of $2.08 per share, the last reported sale price of our common stock on the NASDAQ on March 16, 2020 and excludes the following")
 # get text only of filing
