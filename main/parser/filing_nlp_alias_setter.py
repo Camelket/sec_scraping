@@ -3,7 +3,7 @@ import re
 from spacy.tokens import Token, Span, Doc
 import logging
 from operator import itemgetter
-from .filing_nlp_utils import _set_extension
+from .filing_nlp_utils import get_dep_distance_between_spans, get_dep_distance_between, get_span_distance
 logger = logging.getLogger(__name__)
 
 def get_all_overlapping_intervals(array: list[tuple[int, int]]) -> list[tuple[int, int]]:
@@ -102,7 +102,7 @@ class AliasCache:
         self._alias_assignment_score: dict[tuple[int, int], float] = dict()
         self._unassigned_aliases: set[tuple[int, int]] = set()
         self._base_alias_references: dict[tuple[int, int], list[tuple[int, int]]] = defaultdict(list)
-        # add base alias set so we can check if base was added -> change add alias
+        
     def get_base_aliases_by_origin(self, origin: Token|Span) -> list[tuple[int, int]]|None:
         '''get all assigned aliases to this origin.'''
         origin_tuple = self._get_start_end_tuple(origin)
@@ -131,25 +131,26 @@ class AliasCache:
         if (alias_tuple in self._already_assigned_aliases) or (alias_tuple in self._unassigned_aliases):
             self._base_alias_references[alias_tuple].append(reference_tuple)
         else:
-            logger.warning(f"Add the base Alias first, before registering references to the base Alias.")  
+            logger.warning(f"Add the base Alias({alias_tuple}) first, before registering references to the base Alias.")  
         
-    def add_alias(self, alias: Token|Span):
+    def add_alias(self, alias: Token|Span, references: list[Span]|None=None):
         '''Add an alias to the map of aliases. No assignment happens here.'''
         alias_tuple = self._get_start_end_tuple(alias)
         for x in range(alias_tuple[0], alias_tuple[1]+1):
             self._idx_alias_map[x] = alias_tuple
-        sent_start_end = self._get_sent_start_end_tuple(alias)
+        sent_start_end = self.get_sent_start_end_tuple(alias)
         self._sent_alias_map[sent_start_end].append(alias_tuple)
         self._alias_sent_map[alias_tuple] = sent_start_end
-    
-    def assign_alias(self, alias: Token|Span, origin: Token|Span, score: float, references: list[Span]=None):
-        '''Assign an alias to an origin and set the similarity_score of the alias to the origin.'''
-        alias_tuple = self._get_start_end_tuple(alias)
-        origin_tuple = self._get_sent_start_end_tuple(origin)
-        self._assign_alias(alias_tuple, origin_tuple, score)
+        self._unassigned_aliases.add(alias_tuple)
         if references:
             for ref in references:
                 self.add_reference_to_alias(alias, ref)
+    
+    def assign_alias(self, alias: Token|Span, origin: Token|Span, score: float):
+        '''Assign an alias to an origin and set the similarity_score of the alias to the origin.'''
+        alias_tuple = self._get_start_end_tuple(alias)
+        origin_tuple = self.get_sent_start_end_tuple(origin)
+        self._assign_alias(alias_tuple, origin_tuple, score)
     
     def unassign_alias(self, alias: Token|Span):
         '''Remove the link between alias and origin and put the alias into an unassigned state'''
@@ -219,16 +220,16 @@ class AliasCache:
         if isinstance(alias, Span):
             start_idx = alias.start
             end_idx = alias.end
-        return tuple(start_idx, end_idx)
+        return (start_idx, end_idx)
     
-    def _get_sent_start_end_tuple(self, alias: Token|Span):
+    def get_sent_start_end_tuple(self, alias: Token|Span):
         if isinstance(alias, Token):
             sent_start = alias.sent[0].i
             sent_end = alias.sent[-1].i
         if isinstance(alias, Span):
             sent_start = alias[0].sent[0].i
             sent_end = alias[0].sent[-1].i
-        return tuple(sent_start, sent_end)
+        return (sent_start, sent_end)
 
 
 def ensure_alias_cache_created(doc: Doc):
@@ -340,31 +341,85 @@ class AliasMatcher:
                 doc._.alias_cache.add_reference_to_alias(base, ref)
 
 class AliasSetter:
-    def __init__(self, vocab):
-        self.vocab = vocab
+    # TODO: change __init__ params to set config
+    def __init__(self):
+        self.similarity_score_threshold: float = 0.75 #FIXME: add a sensible value and make the similarity score something between [0, 1]
+        self.very_similar_threshold: float = 0.65
+        self.dep_distance_weight = 0.7
+        self.span_distance_weight: float = 0.3
     
-    def __call__(self, doc: Doc):
+    def __call__(self, doc: Doc, origins: list[Span]):
         self._ensure_alias_cache_present(doc)
+        '''
+        1) receive doc and a list of spans (list of spans could be through a ent_type set with other config for component or through a separat function where we pass spans explicitly => would mean this component isnt just assigned to the pipeline but would need explicit calls)
+        2) get all possible aliases for each span
+        3) calculate similarity score
+        4) max similarity_scores gotten
+        5) see if we are above threshold for origin -> alias assignment
+        6) if 5) assign alias to origin
+        '''
+        self.assign_aliases_to_origins(doc, origins)
+        
+    
+    def assign_aliases_to_origins(self, doc: Doc, origins: list[Span]):
+        assignment_history = []
+        for origin in origins:
+            base_aliases = self._get_right_base_aliases_in_same_sent(doc, origin)
+            if base_aliases:
+                best_alias, best_score = self._determine_best_alias(origin, base_aliases)
+                if best_alias:
+                    if self._similarity_score_above_threshold(best_score):
+                        doc._.alias_cache.assign_alias(best_alias, origin, best_score)
+                        assignment_history.append((best_alias, origin, best_score))
+        logger.debug(f"{self} assigned following aliases (alias, origin, similarity_score): {assignment_history}")
+
+    def _similarity_score_above_threshold(self, similarity_score: float):
+        if similarity_score >= self.similarity_score_threshold:
+            return True
+        return False
+
+    def _determine_best_alias(self, origin: Span, aliases: list[Span]) -> tuple[Span, float]:
+        print(f"_determine_best_alias given: origin({origin}) aliases({aliases})")
+        best_score = 0
+        best_alias = None
+        for base_alias in aliases:
+            similarity_score = get_span_to_span_similarity_score(origin, base_alias)
+            if similarity_score > best_score:
+                best_score = similarity_score
+                best_alias = base_alias
+        return best_alias, best_score
+    
+    def _get_right_base_aliases_in_same_sent(self, doc: Doc, origin: Span) -> list[Span]|None:
+        # TODO: ensure somewhere that we pass aliases as Spans (create a Span if alias would be a single Token)
+        '''get all base aliases in the same sentence with origin[-1].i < base_alias[0].i or None if none present'''
+        result = []
+        sent_start_end_tuple = doc._.alias_cache.get_sent_start_end_tuple(origin)
+        base_alias_in_sent = doc._.alias_cache._sent_alias_map[sent_start_end_tuple]
+        if base_alias_in_sent:
+            for base_alias in base_alias_in_sent:
+                if base_alias[0] > origin.start:
+                    result.append(doc[base_alias[0]:base_alias[1]])
+            return result
+        else:
+            return None
     
     def _ensure_alias_cache_present(self, doc: Doc):
         if not Doc.has_extension("alias_cache"):
-            raise AttributeError(f"The alias_cache extension wasnt set, make sure to place the AliasMatcher Component before the AliasSetter component in the pipeline.")
+            raise AttributeError(f"The alias_cache extension wasnt set, make sure the AliasMatcher Component is placed in the pipeline and called before the AliasSetter is used.")
         if not doc._.alias_cache:
-            raise AttributeError("The alias_cache wasnt correctly set on the doc, make sure AliasMatcher component is working as intended.")
+            raise AttributeError("The alias_cache wasnt correctly set on the doc, make sure AliasMatcher component is working as intended and correctly added to the pipeline.")
     
-def get_span_to_span_similarity_map(
-    secu: list[Token] | Span, alias: list[Token] | Span, threshold: float = 0.65
-):
+def _get_origin_to_target_similarity_map(origin: list[Token]|Span, target: list[Token]|Span) -> dict[tuple[Token, Token], float]:
     similarity_map = {}
-    for secu_token in secu:
-        for alias_token in alias:
-            similarity = secu_token.similarity(alias_token)
-            similarity_map[(secu_token, alias_token)] = similarity
+    for origin_token in origin:
+        for target_token in target:
+            similarity = origin_token.similarity(target_token)
+            similarity_map[(origin_token, target_token)] = similarity
     return similarity_map
 
-def calculate_similarity_score(
-    alias: list[Token] | Span,
-    similarity_map,
+def _calculate_similarity_score(
+    target: list[Token]|Span,
+    similarity_map: dict[tuple[Token, Token], float],
     dep_distance: int,
     span_distance: int,
     very_similar_threshold: float,
@@ -372,27 +427,34 @@ def calculate_similarity_score(
     span_distance_weight: float,
 ) -> float:
     very_similar = sum([v > very_similar_threshold for v in similarity_map.values()])
-    very_similar_score = very_similar / len(alias) if very_similar != 0 else 0
+    very_similar_score = very_similar / len(target) if very_similar != 0 else 0
     dep_distance_score = dep_distance_weight * (1 / dep_distance)
     span_distance_score = span_distance_weight * (10 / span_distance)
     total_score = dep_distance_score + span_distance_score + very_similar_score
     return total_score
     
-def get_span_similarity_score(
-    span1: list[Token] | Span,
-    span2: list[Token] | Span,
+def get_span_to_span_similarity_score(
+    span1: list[Token]|Span,
+    span2: list[Token]|Span,
     dep_distance_weight: float = 0.7,
     span_distance_weight: float = 0.3,
     very_similar_threshold: float = 0.65,
 ) -> float:
-    premerge_tokens = (
-        span1._.premerge_tokens if span1.has_extension("premerge_tokens") else span1
+    span1_tokens = (
+        span1._.premerge_tokens
+        if (span1.has_extension("premerge_tokens") and (span1._.was_merged if span1.has_extension("was_merged") else False)) 
+        else span1
     )
-    similarity_map = get_span_to_span_similarity_map(premerge_tokens, span2)
+    span2_tokens = (
+        span2._.premerge_tokens
+        if (span2.has_extension("premerge_tokens") and (span2._.was_merged if span2.has_extension("was_merged") else False))
+        else span2
+    )
+    similarity_map = _get_origin_to_target_similarity_map(span1_tokens, span2_tokens)
     dep_distance = get_dep_distance_between_spans(span1, span2)
     span_distance = get_span_distance(span1, span2)
     if dep_distance and span_distance and similarity_map:
-        score = calculate_similarity_score(
+        score = _calculate_similarity_score(
             span2,
             similarity_map,
             dep_distance,
@@ -402,61 +464,7 @@ def get_span_similarity_score(
             span_distance_weight=span_distance_weight,
         )
         return score
-
-def get_span_to_span_similarity_map(
-    secu: list[Token] | Span, alias: list[Token] | Span, threshold: float = 0.65
-):
-    similarity_map = {}
-    for secu_token in secu:
-        for alias_token in alias:
-            similarity = secu_token.similarity(alias_token)
-            similarity_map[(secu_token, alias_token)] = similarity
-    return similarity_map
-
-def get_dep_distance_between(origin, target) -> int:
-    """
-    get the distance between two tokens in a spaCy dependency tree.
-
-    Returns:
-        int: distance between origin and target
-        None: if origin and target arent part of the same tree
-    """
-    is_in_same_tree = False
-    if origin.is_ancestor(target):
-        is_in_same_tree = True
-        start = origin
-        end = target
-    if target.is_ancestor(origin):
-        is_in_same_tree = True
-        start = target
-        end = origin
-    if is_in_same_tree:
-        path = BFS_non_recursive(start, end)
-        return len(path)
-    else:
-        return None
-
-
-def get_dep_distance_between_spans(origin, target) -> int:
-    """
-    get the distance between two spans (counting from their root) in a spaCy dependency tree.
-
-    Returns:
-        int: distance between origin and target
-        None: if origin and target arent part of the same tree
-    """
-    distance = get_dep_distance_between(origin.root, target.root)
-    return distance
-
-def get_span_distance(secu, alias: list[Token] | Span) -> int:
-    if secu[0].i > alias[0].i:
-        first = alias
-        second = secu
-    else:
-        first = secu
-        second = alias
-    mean_distance = ((second[0].i - first[-1].i) + (second[-1].i - first[0].i)) / 2
-    return mean_distance
+    return 0
     # start with aliasSetter component which handles base alias to origin mapping based on a given list of Spans
     # using similarity score from filing_nlp.py
     
