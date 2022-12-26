@@ -7,6 +7,9 @@ import string
 
 logger = logging.getLogger(__name__)
 
+def _set_extension(cls, name, kwargs):
+    if not cls.has_extension(name):
+        cls.set_extension(name, **kwargs)
 
 def extend_token_ent_to_span(token: Token, doc: Doc) -> list[Token]:
     span_tokens = [token]
