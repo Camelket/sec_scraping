@@ -1722,7 +1722,7 @@ if __name__ == "__main__":
     alias_setter = AliasSetter()
     doc = alias_setter(doc, origins)
     print(doc[10:13])
-    print(doc._.alias_cache._origin_alias_map)
+    print(doc._.alias_cache._origin_base_alias_map)
     print(doc._.alias_cache._base_alias_references)
     print(doc._.alias_cache.get_all_alias_references_by_origin(doc[10:13]))
     

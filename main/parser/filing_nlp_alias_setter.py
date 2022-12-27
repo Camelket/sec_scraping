@@ -3,7 +3,7 @@ import re
 from spacy.tokens import Token, Span, Doc
 import logging
 from operator import itemgetter
-from .filing_nlp_utils import get_dep_distance_between_spans, get_dep_distance_between, get_span_distance
+from .filing_nlp_utils import _set_extension, get_dep_distance_between_spans, get_dep_distance_between, get_span_distance
 logger = logging.getLogger(__name__)
 
 def get_all_overlapping_intervals(array: list[tuple[int, int]]) -> list[tuple[int, int]]:
@@ -89,6 +89,7 @@ class AliasCache:
             2) connect the alias, origin and similarity_score through assign_alias if we found one
 
     restrictions:
+        An alias cache should only be used with a single Doc object
         No overlapping aliases.
         An alias can only be assigned to one origin at a time.
     '''
@@ -97,8 +98,8 @@ class AliasCache:
         self._sent_alias_map: dict[tuple[int, int], list[tuple[int, int]]] = defaultdict(list)
         self._alias_sent_map: dict[tuple[int, int], tuple[int, int]] = dict()
         self._already_assigned_aliases: set[tuple[int, int]] = set()
-        self._alias_assignment: dict[tuple[int, int], tuple[int, int]] = dict()
-        self._origin_alias_map: dict[tuple[int, int], list[tuple[int, int]]] = defaultdict(list)
+        self._alias_origin_map: dict[tuple[int, int], tuple[int, int]] = dict()
+        self._origin_base_alias_map: dict[tuple[int, int], list[tuple[int, int]]] = defaultdict(list)
         self._alias_assignment_score: dict[tuple[int, int], float] = dict()
         self._unassigned_aliases: set[tuple[int, int]] = set()
         self._base_alias_references: dict[tuple[int, int], list[tuple[int, int]]] = defaultdict(list)
@@ -106,7 +107,7 @@ class AliasCache:
     def get_base_aliases_by_origin(self, origin: Token|Span) -> list[tuple[int, int]]|None:
         '''get all assigned aliases to this origin.'''
         origin_tuple = self._get_start_end_tuple(origin)
-        return self._origin_alias_map.get(origin_tuple, None)
+        return self._origin_base_alias_map.get(origin_tuple, None)
     
     def get_all_aliases_by_origin(self, origin: Token|Span) -> dict[tuple[int, int], list[tuple[int, int]]]:
         '''
@@ -182,19 +183,19 @@ class AliasCache:
         if alias_tuple in self._already_assigned_aliases:
             # first remove assignments in orign to alias map
             self._remove_alias_tuple_from_origin_alias_map(alias_tuple)
-            self._alias_assignment.pop(alias_tuple)
+            self._alias_origin_map.pop(alias_tuple)
             self._alias_assignment_score.pop(alias_tuple)
             self._unassigned_aliases.add(alias_tuple)
 
     def _remove_alias_tuple_from_origin_alias_map(self, alias_tuple):
-        origin_tuple = self._alias_assignment[alias_tuple]
+        origin_tuple = self._alias_origin_map[alias_tuple]
         idx_to_remove = None
-        for idx, each in self._origin_alias_map[origin_tuple]:
+        for idx, each in self._origin_base_alias_map[origin_tuple]:
             if each == alias_tuple:
                 idx_to_remove = idx
                 break
         if idx_to_remove is not None:
-            self._origin_alias_map[origin_tuple].pop(idx_to_remove)
+            self._origin_base_alias_map[origin_tuple].pop(idx_to_remove)
     
     def _remove_alias(self, alias_tuple: tuple[int, int]):
         self._unassign_alias(alias_tuple)
@@ -216,14 +217,14 @@ class AliasCache:
     def _assign_alias(self, alias_tuple: tuple[int, int], origin_tuple: tuple[int, int], score: float):
         if alias_tuple not in self._unassigned_aliases:
             if alias_tuple in self._already_assigned_aliases:
-                logger.warning(f"This alias_tuple:{alias_tuple} already is assigned to an origin:{self._alias_assignment[alias_tuple]}")
+                logger.warning(f"This alias_tuple:{alias_tuple} already is assigned to an origin:{self._alias_origin_map[alias_tuple]}")
             else:
                 logger.warning(f"This alias_tuple:{alias_tuple} wasn't added yet. Use add_alias to add the alias before assigning the alias_tuple.")
         else:
             self._unassigned_aliases.remove(alias_tuple)
-            self._alias_assignment[alias_tuple] = origin_tuple
+            self._alias_origin_map[alias_tuple] = origin_tuple
             self._alias_assignment_score = score
-            self._origin_alias_map[origin_tuple].append(alias_tuple)
+            self._origin_base_alias_map[origin_tuple].append(alias_tuple)
     
     def _get_start_end_tuple(self, alias: Token|Span):
         if isinstance(alias, Token):
@@ -252,6 +253,27 @@ def ensure_alias_cache_created(doc: Doc):
         doc._.alias_cache = alias_cache
     
 class AliasMatcher:
+    '''
+    A Component which finds ("alias") in SEC filings and tries to find the references to
+    them further to the right/down in the text.
+
+    Custom Extensions:
+        Doc Extensions:
+            ._.alias_cache 
+            (see AliasCache class for details, but in short: maps to keep track of aliases)
+            ._.base_alias_set (set[tuple[int, int]])
+            ._.reference_alias_set (set[tuple[int, int]])
+            ._.token_to_alias_map (dict[int, tuple[int,int]])
+
+        Span Extensions:
+            ._.is_alias (getter -> boolean)
+            ._.is_base_alias (getter -> boolean)
+            ._.is_reference_alias (getter -> boolean)
+
+        Token Extensions:
+            ._.is_part_of_alias (getter -> boolean)
+            ._.containing_alias_span (getter -> tuple[int, int])
+    '''
     def __init__(self, vocab):
         self._set_needed_extensions()
         self.vocab = vocab
@@ -269,6 +291,53 @@ class AliasMatcher:
     def _set_needed_extensions(self):
         if not Doc.has_extension("alias_cache"):
             Doc.set_extension("alias_cache", default=None)
+        
+        def is_alias(span: Span):
+            start_end_tuple = (span[0].i, span[-1].i)
+            if start_end_tuple in span.doc._.base_alias_set:
+                return True
+            if start_end_tuple in span.doc._.reference_alias_set:
+                return True
+            return False
+        
+        def is_reference_alias(span: Span):
+            if (span[0].i, span[-1].i) in span.doc._.reference_alias_set:
+                return True
+            return False
+        
+        def is_base_alias(span: Span):
+            if (span[0].i, span[-1].i) in span.doc._.base_alias_set:
+                return True
+            return False
+        
+        def is_part_of_alias(token: Token):
+            if token.i in token.doc._.token_to_alias_map.keys():
+                return True
+            return False
+        
+        def get_containing_alias_span(token: Token):
+            return token.doc._.token_to_alias_map.get(token.i, None)
+        
+        doc_extensions = [
+            {"name": "base_alias_set", "kwargs": {"default": set()}},
+            {"name": "reference_alias_set", "kwargs": {"default": set()}},
+            {"name": "token_to_alias_map", "kwargs": {"default": dict()}},
+        ]
+        span_extensions = [
+            {"name": "is_alias", "kwargs": {"getter": is_alias}},
+            {"name": "is_base_alias", "kwargs": {"getter": is_reference_alias}},
+            {"name": "is_reference_alias", "kwargs": {"getter": is_base_alias}},
+        ]
+        token_extensions = [
+            {"name": "is_part_of_alias", "kwargs": {"getter": is_part_of_alias}},
+            {"name": "containing_alias_span", "kwargs": {"getter": get_containing_alias_span}},
+        ]
+        for each in span_extensions:
+            _set_extension(Span, each["name"], each["kwargs"])
+        for each in doc_extensions:
+            _set_extension(Doc, each["name"], each["kwargs"])
+        for each in token_extensions:
+            _set_extension(Token, each["name"], each["kwargs"])
 
     def _get_chars_to_tokens_map(self, doc: Doc):
         chars_to_tokens = {}
@@ -348,9 +417,17 @@ class AliasMatcher:
     def add_aliases(self, doc: Doc, base_aliases: list[Span], base_to_references: dict[Span, list[Span]]):
         for alias in base_aliases:
             doc._.alias_cache.add_alias(alias)
+            alias_start_end_tuple = (alias[0].i, alias[-1].i)
+            doc._.base_alias_set.add(alias_start_end_tuple)
+            for i in range(alias[0].i, alias[-1].i+1):
+                doc._.token_to_alias_map[i] = alias_start_end_tuple
         for base, references in base_to_references.items():
             for ref in references:
                 doc._.alias_cache.add_reference_to_alias(base, ref)
+                ref_start_end_tuple = (ref[0].i, ref[-1].i)
+                doc._.reference_alias_set.add(ref_start_end_tuple)
+                for i in range(ref[0].i, ref[-1].i+1):
+                    doc._.token_to_alias_map[i] = ref_start_end_tuple
 
 class AliasSetter:
     # TODO: change __init__ params to set config
