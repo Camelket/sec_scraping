@@ -110,7 +110,7 @@ class AliasCache:
     
     def get_all_aliases_by_origin(self, origin: Token|Span) -> dict[tuple[int, int], list[tuple[int, int]]]:
         '''
-        returns a dict of base_alias and references to the alias(excluding origin).'''
+        returns a dict of base_alias and references to the alias(excluding origin, but including base alias).'''
         result = dict()
 
         base_aliases = self.get_base_aliases_by_origin(origin)
@@ -120,6 +120,18 @@ class AliasCache:
                 references = self._base_alias_references[base_tuple]
                 if references:
                     result[base_tuple] = references
+        return result
+    
+    def get_all_alias_references_by_origin(self, origin: Token|Span) -> list[tuple[int, int]]:
+        '''returns a list of all references to the base aliases connected to this origin'''
+        result = []
+        base_aliases = self.get_base_aliases_by_origin(origin)
+        if base_aliases:
+            for base_tuple in base_aliases:
+                references = self._base_alias_references[base_tuple]
+                if references:
+                    for ref in references:
+                        result.append(ref)
         return result
 
     def add_reference_to_alias(self, alias: Token|Span, reference: Token|Span):
@@ -149,7 +161,7 @@ class AliasCache:
     def assign_alias(self, alias: Token|Span, origin: Token|Span, score: float):
         '''Assign an alias to an origin and set the similarity_score of the alias to the origin.'''
         alias_tuple = self._get_start_end_tuple(alias)
-        origin_tuple = self.get_sent_start_end_tuple(origin)
+        origin_tuple = self._get_start_end_tuple(origin)
         self._assign_alias(alias_tuple, origin_tuple, score)
     
     def unassign_alias(self, alias: Token|Span):
@@ -226,9 +238,11 @@ class AliasCache:
         if isinstance(alias, Token):
             sent_start = alias.sent[0].i
             sent_end = alias.sent[-1].i
-        if isinstance(alias, Span):
+        elif isinstance(alias, Span):
             sent_start = alias[0].sent[0].i
             sent_end = alias[0].sent[-1].i
+        else:
+            raise TypeError(f"expecting spacy.tokens.Token or spacy.tokens.Span, got: {type(alias)}")
         return (sent_start, sent_end)
 
 
@@ -300,9 +314,7 @@ class AliasMatcher:
             text_to_search = doc[base.end:].text
             for m in re.finditer(pattern, text_to_search):
                 if m:
-                    # FIXME: what is the correct offest? why does private placement not get added to extended spans ?
-                    # where is the offset wrong, the -2 hack doesnt work
-                    match = re.search(base.text, text_to_search[m.span()[0]:m.span()[1]])
+                    match = re.search(base.text, text_to_search[m.span()[0]:m.span()[1]+1])
                     if match:
                         search_start_offset = (len(doc.text) - len(text_to_search))
                         start_char = search_start_offset + m.start() + match.start()
@@ -343,9 +355,9 @@ class AliasMatcher:
 class AliasSetter:
     # TODO: change __init__ params to set config
     def __init__(self):
-        self.similarity_score_threshold: float = 0.75 #FIXME: add a sensible value and make the similarity score something between [0, 1]
+        self.similarity_score_threshold: float = 1.4 #FIXME: add a sensible value after thinking of a better similarity score function
         self.very_similar_threshold: float = 0.65
-        self.dep_distance_weight = 0.7
+        self.dep_distance_weight: float = 0.7
         self.span_distance_weight: float = 0.3
     
     def __call__(self, doc: Doc, origins: list[Span]):
@@ -359,6 +371,7 @@ class AliasSetter:
         6) if 5) assign alias to origin
         '''
         self.assign_aliases_to_origins(doc, origins)
+        return doc
         
     
     def assign_aliases_to_origins(self, doc: Doc, origins: list[Span]):
@@ -430,6 +443,7 @@ def _calculate_similarity_score(
     very_similar_score = very_similar / len(target) if very_similar != 0 else 0
     dep_distance_score = dep_distance_weight * (1 / dep_distance)
     span_distance_score = span_distance_weight * (10 / span_distance)
+    logger.debug(f"similarity_score consists of dep, span and very_similar scores: {dep_distance_score, span_distance_score, very_similar_score}")
     total_score = dep_distance_score + span_distance_score + very_similar_score
     return total_score
     

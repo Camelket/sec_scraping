@@ -1713,10 +1713,18 @@ if __name__ == "__main__":
     doc = search.nlp(alias_test_text)
     alias_matcher = AliasMatcher(search.nlp.vocab)
     doc = alias_matcher(doc)
-    origins = [s if not doc._.is_alias(s) else None for s in doc._.secus]
+    p = [ent if ent.label_ in ["CONTRACT", "ORG", "PER", "SECU"] else None for ent in doc.ents]
+    origins = []
+    for i in p:
+        if i:
+            origins.append(i)
     print(f"origins: {origins}")
-    # alias_setter = AliasSetter()
-    # doc = alias_setter(doc, origins)
+    alias_setter = AliasSetter()
+    doc = alias_setter(doc, origins)
+    print(doc[10:13])
+    print(doc._.alias_cache._origin_alias_map)
+    print(doc._.alias_cache._base_alias_references)
+    print(doc._.alias_cache.get_all_alias_references_by_origin(doc[10:13]))
     
     # need to check the quantity relations for existance of: daterelation, amount, amods of parent secu and quant 
     # displacy_dep_with_search("The common stock outstanding after the offering is based on 113,299,612 shares of our common stock outstanding as of December 31, 2019 and the sale of 36,057,692 shares of our common stock at an assumed offering price of $2.08 per share, the last reported sale price of our common stock on the NASDAQ on March 16, 2020 and excludes the following")

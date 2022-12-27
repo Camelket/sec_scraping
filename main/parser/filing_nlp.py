@@ -949,6 +949,7 @@ def _add_CONTRACT_ent(matcher, doc: Doc, i: int, matches):
         matches,
         "CONTRACT",
         adjust_ent_before_add_callback=adjust_CONTRACT_ent_before_add,
+        always_overwrite=["ORG", "PER"]
     )
 
 def adjust_CONTRACT_ent_before_add(entity: Span):
