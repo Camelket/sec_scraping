@@ -270,8 +270,6 @@ def get_premerge_tokens_for_token(token: Token) -> tuple | None:
     return None
 
 
-
-
 class SECUQuantityMatcher:
     '''
     This component will mark quantities associated with SECU entities.
@@ -933,7 +931,7 @@ class AgreementMatcher:
     """
 
     def __init__(self, vocab, alias_matcher: AliasMatcher=None, alias_setter: AliasSetter=None):
-        self.alias_matcher = AliasMatcher(vocab) if alias_matcher is None else alias_matcher
+        self.alias_matcher = AliasMatcher() if alias_matcher is None else alias_matcher
         self.alias_setter = AliasSetter() if alias_setter is None else alias_setter
         self.vocab = vocab
         self.matcher = Matcher(vocab)

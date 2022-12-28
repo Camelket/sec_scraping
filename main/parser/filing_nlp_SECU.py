@@ -279,30 +279,6 @@ class SECU:
                 logger.debug(e)
                 continue
             
-
-    # def _set_quantity_relations(self): # REPLACED WITH NEWER VERSION ABOVE WITHOUT SOURCEQUANTITY RELATION
-    #     quants = self.attr_matcher.get_quantities(self.original)
-    #     if not quants:
-    #         # logger.debug(f"no quantities found for secu: {self.original}")
-    #         return
-    #     for quant in quants:
-    #         try:
-    #             quant_obj = SECUQuantity(quant, self.attr_matcher)
-    #         except ValueError as e:
-    #             logger.debug(e)
-    #             continue
-    #         source_context = (
-    #             self.attr_matcher._get_source_secu_context_through_secuquantity(
-    #                 quant_obj.original
-    #             )
-    #         )
-    #         if source_context is not None:
-    #             rel = SourceQuantityRelation(source_context, quant_obj, self)
-    #             self._add_quantity_relation(rel)
-    #         else:
-    #             rel = QuantityRelation(quant_obj, self)
-    #             self._add_quantity_relation(rel)
-
     def _set_original(self, original: Token | Span) -> None:
         if isinstance(original, Token):
             return original

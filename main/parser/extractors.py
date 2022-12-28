@@ -44,7 +44,7 @@ class ExtractedSecurities:
         else:
             logger.warning(f"model.Security {security} is already present on this ExtractedSecurities object.")
     
-    def get_secu_objects(self, security: model.Security):
+    def get_secu_objects(self, security: model.Security) -> list[SECU]:
         return self.objects_map[security]
 
 
