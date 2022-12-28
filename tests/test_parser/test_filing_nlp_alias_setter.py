@@ -1,6 +1,5 @@
 from main.parser.filing_nlp_alias_setter import get_all_overlapping_intervals, get_longest_from_overlapping_groups, AliasCache, AliasMatcher
 import pytest
-from collections import defaultdict
 
 
 @pytest.mark.parametrize(["input", "expected_tuples", "expected_groups"], [
@@ -121,3 +120,10 @@ def test_get_longest_from_overlapping(input, expected):
     assert longest == expected
 
 
+#TODO: add below tests for AliasCache
+# def test_add_alias():
+# def test_assign_alias_without_references()
+# def test_assign_alias_with_references()
+#TODO: add tests for AliasMatcher
+#TODO: add tests for AliasSetter
+        

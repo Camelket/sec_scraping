@@ -331,7 +331,7 @@ class SECU:
             logger.debug(f"relation {relation} already present in {self}")
 
     def _add_relation(self, relation):
-        #TODO[epic=maybe]: do I even need this?
+        #TODO[epic=maybe]: do I even need self.other_relations attribute?
         # consider the case were we want to assign a context to a secu instance,
         # wouldnt I just assign that through extensions on doc, span, token objects?
         # -> at most this should be an accessebility wrapper

@@ -4,12 +4,33 @@ from spacy.tokens import Token, Span, Doc
 import pandas as pd
 import logging
 import string
+from typing import Iterable
 
 logger = logging.getLogger(__name__)
 
 def _set_extension(cls, name, kwargs):
     if not cls.has_extension(name):
         cls.set_extension(name, **kwargs)
+
+def get_none_alias_ent_type_tuples(doc: Doc, ent_type: str) -> list[tuple[int, int]]:
+    result = []
+    for ent in doc.ents:
+        if ent.label_ == ent_type:
+            if ent._.is_alias:
+                continue
+            else:
+                result.append((ent.start, ent.end))
+    return result
+
+def get_none_alias_ent_type_spans(doc: Doc, ent_type: str) -> list[Span]:
+        result = []
+        for ent in doc.ents:
+            if ent.label_ == ent_type:
+                if ent._.is_alias:
+                    continue
+                else:
+                    result.append(ent)
+        return result
 
 def extend_token_ent_to_span(token: Token, doc: Doc) -> list[Token]:
     span_tokens = [token]
@@ -66,7 +87,7 @@ def BFS_non_recursive(origin, target) -> list:
             queue.append(new_path)
 
 
-def get_dep_distance_between(origin, target) -> int:
+def get_dep_distance_between(origin: Token, target: Token) -> int:
     """
     get the distance between two tokens in a spaCy dependency tree.
 
@@ -90,7 +111,7 @@ def get_dep_distance_between(origin, target) -> int:
         return None
 
 
-def get_dep_distance_between_spans(origin, target) -> int:
+def get_dep_distance_between_spans(origin: Span, target: Span) -> int:
     """
     get the distance between two spans (counting from their root) in a spaCy dependency tree.
 
@@ -102,7 +123,7 @@ def get_dep_distance_between_spans(origin, target) -> int:
     return distance
 
 
-def get_span_distance(secu, alias: list[Token] | Span) -> int:
+def get_span_distance(secu: Iterable[Token], alias: Iterable[Token] | Span) -> int:
     if secu[0].i > alias[0].i:
         first = alias
         second = secu

@@ -336,27 +336,6 @@ class TestSpacyFilingTextSearch:
         print(matches)
         assert expected == matches[0]
 
-
-    def test_secu_alias_map(self, get_search):
-        search = get_search
-        text = "On February 22, 2021, we entered into the Securities Purchase Agreement (the “Securities Purchase Agreement”), pursuant to which we agreed to issue the investor named therein (the “Investor”) 8,888,890 shares (the “Shares”) of our common stock, par value $0.000001 per share, at a purchase price of $2.25 per share, and a warrant to purchase up to 6,666,668 shares of our common stock (the “Investor Warrant”) in a private placement (the “Private Placement”). The closing of the Private Placement occurred on February 24, 2021."
-        # text = "On February 22, 2021, we entered into the Securities Purchase Agreement (the “Securities Purchase Agreement”), pursuant to which we agreed to issue the investor named therein (the “Investor”) 8,888,890 shares (the “Shares”) of our common stock, par value $0.000001 per share, at a purchase price of $2.25 per share, and a warrant (the “Investor Warrant”) to purchase up to 6,666,668 shares of our common stock in a private placement (the “Private Placement”). The closing of the Private Placement occurred on February 24, 2021."
-        doc = search.nlp(text)
-        # print(doc._.single_secu_alias_tuples)
-        # print(doc._.single_secu_alias)
-        expected_bases = ["common stock", "common stock", "warrant"]
-        expected_alias = ["Investor Warrant"]
-        alias_map = doc._.single_secu_alias
-        received_bases = sum([alias_map[k]["base"] for k, v in alias_map.items()], [])
-        received_alias = sum([alias_map[k]["alias"] for k, v in alias_map.items()], [])
-        print(f"doc._.single_secu_alias: {alias_map}")
-        assert len(expected_bases) == len(received_bases)
-        assert len(expected_alias) == len(received_alias)
-        for expected, received in zip(expected_bases, received_bases):
-            assert expected == received.text
-        for expected, received in zip(expected_alias, received_alias):
-            assert expected == received.text
-
     @pytest.mark.parametrize(["phrase", "expected"],
         [
             (

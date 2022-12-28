@@ -63,8 +63,7 @@ class BaseHTMExtractor:
         return self.spacy_text_search.nlp(section.text_only)
     
     def _merge_attributes(self, d1: dict, d2: dict) -> Dict:
-        # TODO: DEPRECATE shouldnt be needed after rework
-        logger.debug(f"merging: {d1} and {d2}")
+        logger.debug(f"_merge_attributes merging: {d1} and {d2}")
         if (d2 is None) or (d2 == {}):
             return d1
         for d2key in d2.keys():

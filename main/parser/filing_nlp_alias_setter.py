@@ -274,19 +274,27 @@ class AliasMatcher:
             ._.is_part_of_alias (getter -> boolean)
             ._.containing_alias_span (getter -> tuple[int, int])
     '''
-    def __init__(self, vocab):
+    def __init__(self):
         self._set_needed_extensions()
-        self.vocab = vocab
         self.chars_to_tokens_map: dict = None
+        self.aliases_are_set = False
 
     def __call__(self, doc: Doc):
         ensure_alias_cache_created(doc)
-        if self.chars_to_tokens_map is None:
-            self.chars_to_tokens_map = self._get_chars_to_tokens_map(doc)
+        self.chars_to_tokens_map = self._get_chars_to_tokens_map(doc)
         base_aliases = self.get_base_alias_spans(doc)
         base_to_references = self.get_references_to_base_alias_spans(doc, base_aliases)
         self.add_aliases(doc, base_aliases, base_to_references)
+        self.aliases_are_set = True
         return doc
+    
+    def reinitalize_extensions(self, doc: Doc):
+        doc._.alias_cache = None
+        ensure_alias_cache_created(doc)
+        doc._.base_alias_set = set()
+        doc._.reference_alias_set = set()
+        doc._.token_to_alias_map = dict()
+        self.aliases_are_set = False
     
     def _set_needed_extensions(self):
         if not Doc.has_extension("alias_cache"):
@@ -350,14 +358,16 @@ class AliasMatcher:
         # secu_alias_exclusions = set(["we", "us", "our"])
         spans = []
         parenthesis_pattern = re.compile(r"\([^(]*\)")
-        possible_alias_pattern = re.compile(r"(?:\"|“)[a-zA-Z\s-]*(?:\"|”)")
+        possible_alias_pattern = re.compile(r"(?:\"|“)([a-zA-Z]*[a-zA-Z\s-]*[a-zA-Z]*)(?:\"|”)")
         for match in re.finditer(parenthesis_pattern, doc.text):
             if match:
+                logger.debug(f"found possible base_alias match: {match}")
                 start_idx = match.start()
                 for possible_alias in re.finditer(
                     possible_alias_pattern, match.group()
                 ):
                     if possible_alias:
+                        logger.debug(f"possible_alias from base_alias match: {possible_alias}")
                         start_token = self.chars_to_tokens_map.get(
                             start_idx + possible_alias.start()
                         )
@@ -366,6 +376,7 @@ class AliasMatcher:
                         )
                         if (start_token is not None) and (end_token is not None):
                             alias_span = doc[start_token + 1 : end_token]
+                            logger.debug(f"span created from base_alias match: {alias_span}")
                             spans.append(alias_span)
                         else:
                             logger.debug(
@@ -379,7 +390,7 @@ class AliasMatcher:
         start_end_to_base_map = {}
         for base in base_spans:
             print(f"current_base: {base.text}")
-            pattern = re.compile(f"(?:[^a-zA-z])({base.text})(?:[^a-zA-z])")
+            pattern = re.compile(f"(?:[^a-zA-z])({re.escape(base.text)})(?:[^a-zA-z])")
             text_to_search = doc[base.end:].text
             for m in re.finditer(pattern, text_to_search):
                 if m:
@@ -449,7 +460,6 @@ class AliasSetter:
         '''
         self.assign_aliases_to_origins(doc, origins)
         return doc
-        
     
     def assign_aliases_to_origins(self, doc: Doc, origins: list[Span]):
         assignment_history = []

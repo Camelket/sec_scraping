@@ -13,9 +13,9 @@ from pandas import Timestamp
 
 from main.parser.filing_nlp_utils import (
     MatchFormater,
-    get_dep_distance_between_spans,
-    get_span_distance,
     _set_extension,
+    get_none_alias_ent_type_spans,
+    get_none_alias_ent_type_tuples
 )
 from main.parser.filing_nlp_certainty_setter import create_certainty_setter
 from main.parser.filing_nlp_negation_setter import create_negation_setter
@@ -38,7 +38,7 @@ from main.parser.filing_nlp_constants import (
     SECUQUANTITY_UNITS,
 )
 from main.parser.filing_nlp_SECU import SECU, SECUQuantity, UnitAmount, QuantityRelation, SourceQuantityRelation
-
+from main.parser.filing_nlp_alias_setter import AliasMatcher, AliasSetter
 logger = logging.getLogger(__name__)
 formater = MatchFormater()
 
@@ -167,7 +167,6 @@ def get_span_secuquantity_float(span: Span):
             "get_secuquantity can only be called on Spans with label: 'SECUQUANTITY'"
         )
 
-
 def get_token_secuquantity_float(token: Token):
     if not isinstance(token, Token):
         raise TypeError(
@@ -182,196 +181,12 @@ def get_token_secuquantity_float(token: Token):
             "get_secuquantity can only be called on Spans with label: 'SECUQUANTITY'"
         )
 
-
-def retokenize_SECU(doc: Doc):
-    # this needs to decouple the source/premerge tokens so
-    # we dont have problem with a shift of token positions
-    # after the merge
-    with doc.retokenize() as retokenizer:
-        for ent in doc.ents:
-            if ent.label_ == "SECU":
-                source_doc_slice = ent.as_doc(copy_user_data=True)
-                # handle previously merged tokens to retain
-                # original/first source_span_unmerged
-                if not ent.has_extension("was_merged"):
-                    source_tokens = tuple([t for t in source_doc_slice])
-                else:
-                    if ent._.was_merged:
-                        source_tokens = ent._.premerge_tokens
-                    else:
-                        source_tokens = tuple([t for t in source_doc_slice])
-                attrs = {
-                    # "tag": ent.root.tag,
-                    "tag": "NOUN",
-                    "pos": "NOUN",
-                    "dep": ent.root.dep,
-                    "ent_type": ent.label,
-                    # might fix some wrong dependency setting (SECU should be a NOUN in any case, correct?)
-                    "_": {"source_span_unmerged": source_tokens, "was_merged": True},
-                }
-                ent._.was_merged = True
-                retokenizer.merge(ent, attrs=attrs)
-    return doc
-
-
-def get_span_to_span_similarity_map(
-    secu: list[Token] | Span, alias: list[Token] | Span, threshold: float = 0.65
-):
-    similarity_map = {}
-    for secu_token in secu:
-        for alias_token in alias:
-            similarity = secu_token.similarity(alias_token)
-            similarity_map[(secu_token, alias_token)] = similarity
-    return similarity_map
-    # if  similarity > 0.65:
-    #     similarity_map_entry["very_similar"].append((secu_token, alias_token, secu_token.similarity(alias_token)))
-    #     very_similar_count += 1
-
-    # compare token to token2 and check if we have a token that is very similar >.65
-    # count the very similar tokens
-    # take the alias with the highest count ?
-    # bootstrap a statistical model to predict the alias?
-
-def calculate_similarity_score(
-    alias: list[Token] | Span,
-    similarity_map,
-    dep_distance: int,
-    span_distance: int,
-    very_similar_threshold: float,
-    dep_distance_weight: float,
-    span_distance_weight: float,
-) -> float:
-    very_similar = sum([v > very_similar_threshold for v in similarity_map.values()])
-    very_similar_score = very_similar / len(alias) if very_similar != 0 else 0
-    dep_distance_score = dep_distance_weight * (1 / dep_distance)
-    span_distance_score = span_distance_weight * (10 / span_distance)
-    total_score = dep_distance_score + span_distance_score + very_similar_score
-    return total_score
-
-
-def get_span_similarity_score(
-    span1: list[Token] | Span,
-    span2: list[Token] | Span,
-    dep_distance_weight: float = 0.7,
-    span_distance_weight: float = 0.3,
-    very_similar_threshold: float = 0.65,
-) -> float:
-    premerge_tokens = (
-        span1._.premerge_tokens if span1.has_extension("premerge_tokens") else span1
-    )
-    similarity_map = get_span_to_span_similarity_map(premerge_tokens, span2)
-    dep_distance = get_dep_distance_between_spans(span1, span2)
-    span_distance = get_span_distance(span1, span2)
-    if dep_distance and span_distance and similarity_map:
-        score = calculate_similarity_score(
-            span2,
-            similarity_map,
-            dep_distance,
-            span_distance,
-            very_similar_threshold=very_similar_threshold,
-            dep_distance_weight=dep_distance_weight,
-            span_distance_weight=span_distance_weight,
-        )
-        return score
-
-
-def get_alias(doc: Doc, secu: Span):
-    # logger.debug(f"getting alias for: {secu}")
-    if doc._.is_alias(secu) is True:
-        return None
-    else:
-        secu_first_token = secu[0]
-        secu_last_token = secu[-1]
-        similarity_score_store = []
-        checked_combination = set()
-        # TODO: optimize this, but how?
-        for sent in doc.sents:
-            if secu_first_token in sent:
-                secu_counter = 0
-                token_idx_offset = sent[0].i
-                for token in sent[secu_last_token.i - token_idx_offset + 1 :]:
-                    alias = doc._.tokens_to_alias_map.get(token.i)
-                    if token.ent_type_ == "SECU":
-                        secu_counter += 1
-                        if alias is None and secu_counter > 2:
-                            return None
-                    if alias:
-                        if (secu, alias) in checked_combination:
-                            continue
-                        score = get_span_similarity_score(secu, alias)
-                        checked_combination.add((secu, alias))
-                        if score:
-                            similarity_score_store.append(
-                                (secu, alias, sent[0].i, score)
-                            )
-        # logger.debug(f"similarity_score_map: {similarity_score_store}")
-        if similarity_score_store != []:
-            highest_similarity = sorted(similarity_score_store, key=lambda x: x[3])[-1]
-            return highest_similarity[1]
-        else:
-            return None
-
-
 def _get_SECU_in_doc(doc: Doc) -> list[Span]:
     secu_spans = []
     for ent in doc.ents:
         if ent.label_ == "SECU":
             secu_spans.append(ent)
     return secu_spans
-
-
-def _set_single_secu_alias_map(doc: Doc) -> dict:
-    if (doc.spans.get("SECU") is None) or (doc.spans.get("alias") is None):
-        raise AttributeError(
-            f"Didnt set spans correctly missing one or more keys of (SECU, alias). keys found: {doc.spans.keys()}"
-        )
-    single_secu_alias = dict()
-    secu_ents = doc._.secus
-    # logger.debug(f"working from ._.secus: {secu_ents}")
-    for secu in secu_ents:
-        if doc._.is_alias(secu):
-            continue
-        secu_key = get_secu_key(secu)
-        # logger.debug(f"got secu_key: {secu_key} -> from secu -> {secu}")
-        if secu_key not in single_secu_alias.keys():
-            single_secu_alias[secu_key] = {"base": [secu], "alias": []}
-        else:
-            single_secu_alias[secu_key]["base"].append(secu)
-        alias = doc._.get_alias(secu)
-        if alias:
-            single_secu_alias[secu_key]["alias"].append(alias)
-    # logger.debug(f"got single_secu_alias map: {single_secu_alias}")
-    doc._.single_secu_alias = single_secu_alias
-
-
-def _set_single_secu_alias_map_as_tuples(doc: Doc) -> dict:
-    if (doc.spans.get("SECU") is None) or (doc.spans.get("alias") is None):
-        # print(doc.spans.get("SECU"), doc.spans.get("alias"))
-        raise AttributeError(
-            f"Didnt set spans correctly missing one or more keys of (SECU, alias). keys found: {doc.spans.keys()}"
-        )
-    single_secu_alias_tuples = dict()
-    secu_ents = doc._.secus
-    for secu in secu_ents:
-        if doc._.is_alias(secu):
-            continue
-        secu_key = get_secu_key(secu)
-        if secu_key not in single_secu_alias_tuples.keys():
-            single_secu_alias_tuples[secu_key] = {"alias": [], "no_alias": []}
-        alias = doc._.get_alias(secu)
-        if alias:
-            single_secu_alias_tuples[secu_key]["alias"].append((secu, alias))
-        else:
-            single_secu_alias_tuples[secu_key]["no_alias"].append(secu)
-    logger.info(f"single_secu_alias_tuples: {single_secu_alias_tuples}")
-    doc._.single_secu_alias_tuples = single_secu_alias_tuples
-
-
-def is_alias(doc: Doc, secu: Span) -> bool:
-    if secu.text in doc._.alias_list:
-        return True
-    return False
-
 
 def get_secu_key(secu: Span | Token) -> str:
     premerge_tokens = (
@@ -584,11 +399,7 @@ class SECUObjectMapper:
                 quantity_relation = doc._.quantity_relation_map.get(incomplete_source_quantity.i, None)
                 if quantity_relation is not None:
                     if quantity_relation.main_secu != secu:
-                        # logger.warning((incomplete_source_quantity, "<- incomplete source quantity"))
                         # TODO[epic=important]: how can i include varying contexts between source and target security?
-                        # source_context: SourceContext = self._secu_attr_getter._get_source_secu_context_through_secuquantity(incomplete_source_quantity)
-                        # if source_context is None:
-                        #     logger.warning(f"couldnt establish a source_context for this source_quantity_relation: {incomplete_source_quantity, quantity_relation}")
                         source_quantity_relation = SourceQuantityRelation(quantity_relation.quantity, quantity_relation.main_secu, source_secu=secu)
                         yield source_quantity_relation
         yield None
@@ -607,19 +418,22 @@ class SECUMatcher:
     This component adds SECU, SECUREF and SECUATTR entities.
 
     Custom extension attributes added with this component:
+        listed with "*[subcomponent]" are added through subcomponents
         Doc extensions:
-            - ._.alias_list (set of aliases in doc as string eg: alias.text)
-            - ._.tokens_to_alias_map (maps children token.i to parent alias span)
-            - ._.single_secu_alias (?)
-            - ._.single_secu_alias_tuples (aliases and no alias SECU's grouped by secu_key)
-            - ._.is_alias (method, check wether this token is an alias to another token or not)
-            - ._.get_alias (method, get aliases to the specified token)
             - ._.secus (helper to get all SECU ents)
+            *[AliasMatcher] ._.alias_cache 
+            (see AliasCache class for details, but in short: maps to keep track of aliases)
+            *[AliasMatcher] ._.base_alias_set (set[tuple[int, int]])
+            *[AliasMatcher] ._.reference_alias_set (set[tuple[int, int]])
+            *[AliasMatcher] ._.token_to_alias_map (dict[int, tuple[int,int]])
         Span extensions:
             - ._.premerge_tokens (tokens before retokenization)
             - ._.was_merged (were any tokens in the Span retokenized)
             - ._.secu_key (string key to identify securities across singular and plural, WIP)
             - ._.amods (amods close in the dependency tree, according to patterns in filing_nlp_patterns.py)
+            *[AliasMatcher] ._.is_alias (getter -> boolean)
+            *[AliasMatcher] ._.is_base_alias (getter -> boolean)
+            *[AliasMatcher] ._.is_reference_alias (getter -> boolean)
         Token extensions:
             - ._.was_merged (is this token the result of retokenization)
             - ._.premerge_tokens (tokens before retokenization)
@@ -628,35 +442,39 @@ class SECUMatcher:
             - ._.amods (amods close in the dependency tree, according to patterns in filing_nlp_patterns.py)
             - ._.nsubjpass (nsubjpass were this token is the origin)
             - ._.adj (adjectives close in the dependency tree, according to patterns in filing_nlp_patterns.py)
-
+            *[AliasMatcher] ._.is_part_of_alias (getter -> boolean)
+            *[AliasMatcher] ._.containing_alias_span (getter -> tuple[int, int])
     SideEffect:
         Indices shift, so place component as early as possible and after all other components which shift indices.
         Overwrites previously set entities if they conflict with SECU, SECUREF or SECUATTR
     '''
-    def __init__(self, vocab):
+    def __init__(self, vocab, alias_matcher: AliasMatcher=None, alias_setter: AliasSetter=None):
         self.vocab = vocab
+        self.alias_matcher = AliasMatcher() if alias_matcher is None else alias_matcher
+        self.alias_setter = AliasSetter() if alias_setter is None else alias_setter
         self.matcher_SECU = Matcher(vocab)
         self.matcher_SECUREF = Matcher(vocab)
         self.matcher_SECUATTR = Matcher(vocab)
         self._set_needed_extensions()
+        #TODO[epic=less_important]: rethink if we need the SECUREF and SECUATTR at any point
         self.add_SECU_ent_to_matcher(self.matcher_SECU)
         self.add_SECUREF_ent_to_matcher(self.matcher_SECUREF)
         self.add_SECUATTR_ent_to_matcher(self.matcher_SECUATTR)
-
+    
     def __call__(self, doc: Doc):
-        self._init_span_labels(doc)
-        self.chars_to_token_map = self.get_chars_to_tokens_map(doc)
-        self.set_possible_alias_spans(doc)
-        self.set_tokens_to_alias_map(doc)
+        self._init_span_labels(doc) # remove alias spans from this
+        self.alias_matcher(doc)
         self.matcher_SECU(doc)
-        update_doc_secus_spans(doc)
+        self.handle_secu_special_cases(doc)
+        self.handle_retokenize_secu(doc)
+        self.alias_matcher.reinitalize_extensions(doc)
+        self.alias_matcher(doc)
+        self.alias_setter(doc, self.get_none_alias_secu_spans(doc))
+        self.update_doc_secu_spans(doc)
         self.matcher_SECUREF(doc)
-        doc = self.handle_retokenize_SECU(doc)
-        self.handle_SECU_special_cases(doc)
-        doc = self.handle_retokenize_SECU(doc)
         self.matcher_SECUATTR(doc)
         return doc
-    
+
     def _set_needed_extensions(self):
         token_extensions = [
             {"name": "source_span_unmerged", "kwargs": {"default": None}},
@@ -674,12 +492,6 @@ class SECUMatcher:
             {"name": "was_merged", "kwargs": {"default": False}},
         ]
         doc_extensions = [
-            {"name": "alias_list", "kwargs": {"default": list()}},
-            {"name": "tokens_to_alias_map", "kwargs": {"default": dict()}},
-            {"name": "single_secu_alias", "kwargs": {"default": dict()}},
-            {"name": "single_secu_alias_tuples", "kwargs": {"default": dict()}},
-            {"name": "is_alias", "kwargs": {"method": is_alias}},
-            {"name": "get_alias", "kwargs": {"method": get_alias}},
             {"name": "secus", "kwargs": {"getter": _get_SECU_in_doc}},
         ]
 
@@ -690,115 +502,87 @@ class SECUMatcher:
         for each in token_extensions:
             _set_extension(Token, each["name"], each["kwargs"])
 
-    def handle_retokenize_SECU(self, doc: Doc):
-        doc = retokenize_SECU(doc)
-        update_doc_secus_spans(doc)
+    def update_doc_secu_spans(self, doc: Doc):
+        doc._.secus = []
+        for ent in doc.ents:
+            if ent.label_ == "SECU":
+                if ent._.is_alias:
+                    continue
+                doc._.secus.append(ent)
+    
+    def get_none_alias_secu_tuples(self, doc: Doc) -> list[tuple[int, int]]:
+        return get_none_alias_ent_type_tuples(doc, "SECU")
+    
+    def get_none_alias_secu_spans(self, doc: Doc) -> list[Span]:
+        return get_none_alias_ent_type_spans(doc, "SECU")
+    
+    def handle_secu_matching_outside_base_patterns(self, doc: Doc, matcher: Matcher):
+        special_patterns = []
+        origin_secu_tuples = self.get_none_alias_secu_tuples(doc)
+        for secu_tuple in origin_secu_tuples:
+            secu_span = doc[secu_tuple[0]:secu_tuple[1]]
+            special_patterns.append([{"LOWER": x.lower_} for x in secu_span])
+            if len(secu_span) > 1:
+                special_patterns.append(
+                    [
+                        *[{"LOWER": x.lower_} for x in secu_span[:-1]],
+                        {"LEMMA": secu_span[-1].lemma_},
+                    ]
+                )
+        matcher.add("special_secu_patterns", special_patterns, on_match=_add_SECU_ent)
+        matcher(doc)
+                   
+    def handle_secu_special_cases(self, doc: Doc):
+        special_case_matcher = Matcher(self.vocab)
+        self.handle_secu_matching_outside_base_patterns(doc, special_case_matcher)
+
+    def handle_retokenize_secu(self, doc: Doc):
+        self.retokenize_secus(doc)
         self.chars_to_token_map = self.get_chars_to_tokens_map(doc)
-        self.set_possible_alias_spans(doc)
-        self.set_tokens_to_alias_map(doc)
-        _set_single_secu_alias_map(doc)
-        _set_single_secu_alias_map_as_tuples(doc)
         return doc
+    
+    def retokenize_secus(self, doc: Doc):
+        with doc.retokenize() as retokenizer:
+            for ent in doc.ents:
+                if ent.label_ == "SECU":
+                    source_doc_slice = ent.as_doc(copy_user_data=True)
+                    # handle previously merged tokens to retain
+                    # original/first source_span_unmerged
+                    if not ent.has_extension("was_merged"):
+                        source_tokens = tuple([t for t in source_doc_slice])
+                    else:
+                        if ent._.was_merged:
+                            source_tokens = ent._.premerge_tokens
+                        else:
+                            source_tokens = tuple([t for t in source_doc_slice])
+                    attrs = {
+                        # might fix some wrong dependency setting (SECU should be a NOUN in any case, correct?)
+                        "tag": "NOUN",
+                        "pos": "NOUN",
+                        "dep": ent.root.dep,
+                        "ent_type": ent.label,
+                        "_": {"source_span_unmerged": source_tokens, "was_merged": True},
+                    }
+                    ent._.was_merged = True
+                    retokenizer.merge(ent, attrs=attrs)
+        return doc
+    
 
     def _init_span_labels(self, doc: Doc):
         doc.spans["SECU"] = []
-        doc.spans["alias"] = []
 
-    def handle_SECU_special_cases(self, doc: Doc):
-        special_case_matcher = Matcher(self.vocab)
-        self.add_alias_SECU_cases_to_matcher(doc, special_case_matcher)
-        special_case_matcher(doc)
-
-    def add_alias_SECU_cases_to_matcher(self, doc, matcher):
-        special_patterns = []
-        for secu_key, values in doc._.single_secu_alias_tuples.items():
-            # logger.info(f"current key: {secu_key}")
-            alias_tuples = doc._.single_secu_alias_tuples[secu_key]["alias"]
-            # logger.info(f"current alias_tuples: {alias_tuples}")
-            if alias_tuples and alias_tuples != []:
-                for entry in alias_tuples:
-                    # base_span = entry[0]
-                    alias_span = entry[1]
-                    special_patterns.append([{"LOWER": x.lower_} for x in alias_span])
-                    if len(alias_span) > 1:
-                        special_patterns.append(
-                            [
-                                *[{"LOWER": x.lower_} for x in alias_span[:-1]],
-                                {"LEMMA": alias_span[-1].lemma_},
-                            ]
-                        )
-        logger.debug(
-            f"adding special alias_SECU patterns to matcher: {special_patterns}"
-        )
-        matcher.add("alias_special_cases", special_patterns, on_match=_add_SECU_ent)
-
-    def get_chars_to_tokens_map(self, doc: Doc):
+    def get_chars_to_tokens_map(self, doc: Doc) -> dict[int, int]:
         chars_to_tokens = {}
         for token in doc:
             for i in range(token.idx, token.idx + len(token.text)):
                 chars_to_tokens[i] = token.i
         return chars_to_tokens
 
-    def get_tokens_to_alias_map(self, doc: Doc):
-        tokens_to_alias_map = {}
-        alias_spans = doc.spans["alias"]
-        for span in alias_spans:
-            for token in span:
-                tokens_to_alias_map[token.i] = span
-        return tokens_to_alias_map
-
-    def get_possible_alias_spans(self, doc: Doc, chars_to_tokens: Dict):
-        secu_alias_exclusions = set(["we", "us", "our"])
-        spans = []
-        parenthesis_pattern = re.compile(r"\([^(]*\)")
-        possible_alias_pattern = re.compile(r"(?:\"|“)[a-zA-Z\s-]*(?:\"|”)")
-        for match in re.finditer(parenthesis_pattern, doc.text):
-            if match:
-                start_idx = match.start()
-                for possible_alias in re.finditer(
-                    possible_alias_pattern, match.group()
-                ):
-                    if possible_alias:
-                        start_token = chars_to_tokens.get(
-                            start_idx + possible_alias.start()
-                        )
-                        end_token = chars_to_tokens.get(
-                            start_idx + possible_alias.end() - 1
-                        )
-                        if (start_token is not None) and (end_token is not None):
-                            alias_span = doc[start_token + 1 : end_token]
-                            if alias_span.text in secu_alias_exclusions:
-                                logger.debug(
-                                    f"Was in secu_alias_exclusions -> discarded alias span: {alias_span}"
-                                )
-                                continue
-                            spans.append(alias_span)
-                        else:
-                            logger.debug(
-                                f"couldnt find start/end token for alias: {possible_alias}; start/end token: {start_token}/{end_token}"
-                            )
-        return spans
-
-    def _set_possible_alias_spans(self, doc: Doc, spans: list[Span]):
-        doc.spans["alias"] = spans
-
-    def set_possible_alias_spans(self, doc: Doc):
-        self._set_possible_alias_spans(
-            doc, self.get_possible_alias_spans(doc, self.chars_to_token_map)
-        )
-        logger.debug(f"set alias spans: {doc.spans['alias']}")
-        for span in doc.spans["alias"]:
-            doc._.alias_list.append(span.text)
-        logger.debug(f"set alias_list extension: {doc._.alias_list}")
-
-    def set_tokens_to_alias_map(self, doc: Doc):
-        doc._.tokens_to_alias_map = self.get_tokens_to_alias_map(doc)
-
-    def add_SECUATTR_ent_to_matcher(self, matcher):
+    def add_SECUATTR_ent_to_matcher(self, matcher: Matcher):
         patterns = [[{"LOWER": "exercise"}, {"LOWER": "price"}]]
         matcher.add("SECUATTR_ENT", [*patterns], on_match=_add_SECUATTR_ent)
 
-    def add_SECUREF_ent_to_matcher(self, matcher):
+    def add_SECUREF_ent_to_matcher(self, matcher: Matcher):
         general_pre_sec_modifiers = ["convertible"]
         general_pre_sec_compound_modifiers = [
             [{"LOWER": "non"}, {"LOWER": "-"}, {"LOWER": "convertible"}],
@@ -882,27 +666,6 @@ def _is_match_preceeded_by(doc: Doc, start: int, end: int, exclude: list[str]):
     if doc[start - 1].lower_ not in exclude:
         return False
     return True
-
-
-def update_doc_secus_spans(doc: Doc):
-    doc._.secus = []
-    # logger.debug(f"updating doc._.secus")
-    for ent in doc.ents:
-        if ent.label_ == "SECU":
-            # logger.debug(f"found SECU ent in doc.ents: {ent}")
-            if doc._.is_alias(ent):
-                continue
-            # logger.debug(f"ent was not an alias, adding it.")
-            doc._.secus.append(ent)
-
-
-def add_SECU_to_spans(doc: Doc, entity: Span):
-    if doc._.is_alias(entity):
-        return
-    else:
-        # logger.debug(f"adding to SECU spans: {entity}")
-        add_entity_to_spans(doc, entity, "SECU")
-
 
 def add_entity_to_spans(doc: Doc, entity: Span, span_label: str):
     if not doc.spans.get(span_label):
@@ -1162,13 +925,16 @@ def _get_singular_or_plural_of_SECU_token(token):
 # TODO: rename to something more accurate and unambigious
 class AgreementMatcher:
     """
+    Components which matches CONTRACT entities.
     What do i want to tag?
         1) contractual agreements between two parties CONTRACT
-        2) placements (private placement), public offerings -> specifiers for a CONTRACT or standing alone in text
-        how else could the context of origin be present in a filing?
+        2) placements (private placement), public offerings
+        how else could the context of security origin be present in a filing?
     """
 
-    def __init__(self, vocab):
+    def __init__(self, vocab, alias_matcher: AliasMatcher=None, alias_setter: AliasSetter=None):
+        self.alias_matcher = AliasMatcher(vocab) if alias_matcher is None else alias_matcher
+        self.alias_setter = AliasSetter() if alias_setter is None else alias_setter
         self.vocab = vocab
         self.matcher = Matcher(vocab)
         self.add_CONTRACT_ent_to_matcher()
@@ -1180,9 +946,11 @@ class AgreementMatcher:
         ]
         self.matcher.add("contract", patterns, on_match=_add_CONTRACT_ent)
 
-   
     def __call__(self, doc: Doc):
         self.matcher(doc)
+        if self.alias_matcher.aliases_are_set is False:
+            self.alias_matcher(doc)
+        self.alias_setter(doc, get_none_alias_ent_type_spans(doc, "CONTRACT"))
         return doc
 
     # def agreement_callback()
@@ -1190,9 +958,9 @@ class AgreementMatcher:
 
 
 
-@Language.factory("secu_matcher")
-def create_secu_matcher(nlp, name):
-    return SECUMatcher(nlp.vocab)
+@Language.factory("secu_matcher", default_config={"kwargs": {}})
+def create_secu_matcher(nlp, name, kwargs):
+    return SECUMatcher(nlp.vocab, **kwargs)
 
 @Language.factory("secuquantity_matcher")
 def create_secuquantity_matcher(nlp, name):
@@ -1217,9 +985,9 @@ def create_common_financial_retokenizer(nlp, name):
     return CommonFinancialRetokenizer(nlp.vocab)
 
 
-@Language.factory("agreement_matcher")
-def create_agreement_matcher(nlp, name):
-    return AgreementMatcher(nlp.vocab)
+@Language.factory("agreement_matcher", default_config={"kwargs": {}})
+def create_agreement_matcher(nlp, name, kwargs):
+    return AgreementMatcher(nlp.vocab, **kwargs)
 
 
 
@@ -1233,20 +1001,33 @@ class SpacyFilingTextSearch:
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super(SpacyFilingTextSearch, cls).__new__(cls)
+            alias_matcher = AliasMatcher()
+            alias_setter = AliasSetter()
             cls._instance.nlp = spacy.load("en_core_web_lg")
-            cls._instance.nlp.add_pipe("secu_act_matcher", first=True)
             cls._instance.nlp.add_pipe(
-                "security_law_retokenizer", after="secu_act_matcher"
+                "secu_act_matcher",
+                first=True
             )
             cls._instance.nlp.add_pipe(
-                "common_financial_retokenizer", after="security_law_retokenizer"
+                "security_law_retokenizer",
+                after="secu_act_matcher"
+            )
+            cls._instance.nlp.add_pipe(
+                "common_financial_retokenizer",
+                after="security_law_retokenizer"
             )
             cls._instance.nlp.add_pipe("negation_setter")
-            cls._instance.nlp.add_pipe("secu_matcher")
+            cls._instance.nlp.add_pipe(
+                "secu_matcher",
+                {"alias_matcher": alias_matcher, "alias_setter": alias_setter}
+            )
             cls._instance.nlp.add_pipe("secuquantity_matcher")
             cls._instance.nlp.add_pipe("certainty_setter")
             cls._instance.nlp.add_pipe("secu_object_mapper")
-            cls._instance.nlp.add_pipe("agreement_matcher")
+            cls._instance.nlp.add_pipe(
+                "agreement_matcher"
+                {"alias_matcher": alias_matcher, "alias_setter": alias_setter}
+            )
             # cls._instance.nlp.add_pipe("coreferee")
         return cls._instance
     
