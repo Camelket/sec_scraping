@@ -13,6 +13,9 @@ logger = logging.getLogger(__name__)
 class SecurityNotFound(Exception):
     pass
 
+class CompanyNotFound(Exception):
+    pass
+
 class AllowedSecurityTypes(Enum):
     CommonShare = 'CommonShare'
     PreferredShare = 'PreferredShare'
@@ -770,16 +773,8 @@ class Company:
         '''returns first security matching attributes or None if no security has matching attributes'''
         for secu in self.securities:
             secu_attr_dict = json.loads(secu.security_attributes)
-            for attribute, value in attributes.items():
-                secu_attr_value = getattr(secu_attr_dict, attribute, None)
-                if secu_attr_value:
-                    if secu_attr_value == value:
-                        pass
-                    else:
-                        break
-                else:
-                    break
-            return secu
+            if all([secu_attr_dict.get(attribute, None) == value for attribute, value in attributes.items()]):
+                return secu
         return None
             
     def get_security_by_name(self, name):

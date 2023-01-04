@@ -446,10 +446,10 @@ class SECUMatcher:
         Indices shift, so place component as early as possible and after all other components which shift indices.
         Overwrites previously set entities if they conflict with SECU, SECUREF or SECUATTR
     '''
-    def __init__(self, vocab, alias_matcher: AliasMatcher=None, alias_setter: AliasSetter=None):
+    def __init__(self, vocab):
         self.vocab = vocab
-        self.alias_matcher = AliasMatcher() if alias_matcher is None else alias_matcher
-        self.alias_setter = AliasSetter() if alias_setter is None else alias_setter
+        self.alias_matcher = AliasMatcher()
+        self.alias_setter = AliasSetter()
         self.matcher_SECU = Matcher(vocab)
         self.matcher_SECUREF = Matcher(vocab)
         self.matcher_SECUATTR = Matcher(vocab)
@@ -930,9 +930,9 @@ class AgreementMatcher:
         how else could the context of security origin be present in a filing?
     """
 
-    def __init__(self, vocab, alias_matcher: AliasMatcher=None, alias_setter: AliasSetter=None):
-        self.alias_matcher = AliasMatcher() if alias_matcher is None else alias_matcher
-        self.alias_setter = AliasSetter() if alias_setter is None else alias_setter
+    def __init__(self, vocab):
+        self.alias_matcher = AliasMatcher()
+        self.alias_setter = AliasSetter()
         self.vocab = vocab
         self.matcher = Matcher(vocab)
         self.add_CONTRACT_ent_to_matcher()
@@ -956,9 +956,9 @@ class AgreementMatcher:
 
 
 
-@Language.factory("secu_matcher", default_config={"kwargs": {}})
-def create_secu_matcher(nlp, name, kwargs):
-    return SECUMatcher(nlp.vocab, **kwargs)
+@Language.factory("secu_matcher")
+def create_secu_matcher(nlp, name):
+    return SECUMatcher(nlp.vocab)
 
 @Language.factory("secuquantity_matcher")
 def create_secuquantity_matcher(nlp, name):
@@ -983,9 +983,9 @@ def create_common_financial_retokenizer(nlp, name):
     return CommonFinancialRetokenizer(nlp.vocab)
 
 
-@Language.factory("agreement_matcher", default_config={"kwargs": {}})
-def create_agreement_matcher(nlp, name, kwargs):
-    return AgreementMatcher(nlp.vocab, **kwargs)
+@Language.factory("agreement_matcher")
+def create_agreement_matcher(nlp, name):
+    return AgreementMatcher(nlp.vocab)
 
 
 
@@ -999,8 +999,6 @@ class SpacyFilingTextSearch:
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super(SpacyFilingTextSearch, cls).__new__(cls)
-            alias_matcher = AliasMatcher()
-            alias_setter = AliasSetter()
             cls._instance.nlp = spacy.load("en_core_web_lg")
             cls._instance.nlp.add_pipe(
                 "secu_act_matcher",
@@ -1015,17 +1013,11 @@ class SpacyFilingTextSearch:
                 after="security_law_retokenizer"
             )
             cls._instance.nlp.add_pipe("negation_setter")
-            cls._instance.nlp.add_pipe(
-                "secu_matcher",
-                {"alias_matcher": alias_matcher, "alias_setter": alias_setter}
-            )
+            cls._instance.nlp.add_pipe("secu_matcher")
             cls._instance.nlp.add_pipe("secuquantity_matcher")
             cls._instance.nlp.add_pipe("certainty_setter")
             cls._instance.nlp.add_pipe("secu_object_mapper")
-            cls._instance.nlp.add_pipe(
-                "agreement_matcher"
-                {"alias_matcher": alias_matcher, "alias_setter": alias_setter}
-            )
+            cls._instance.nlp.add_pipe("agreement_matcher")
             # cls._instance.nlp.add_pipe("coreferee")
         return cls._instance
     

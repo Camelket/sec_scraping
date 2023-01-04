@@ -127,7 +127,7 @@ def add_effect_registration(cmd: commands.AddEffectRegistration, uow: AbstractUn
 
 def add_outstanding_security_fact(cmd: commands.AddOutstandingSecurityFact, uow: AbstractUnitOfWork):
     with uow as u:
-        company: model.Company = u.company.get(symbol=cmd.symbol)
+        company: model.Company = u.company.get(symbol=cmd.symbol, lazy=True)
         security: model.Security = company.get_security_by_attributes(cmd.attributes)
         if security:
             for outstanding in cmd.outstanding:
@@ -138,7 +138,7 @@ def add_outstanding_security_fact(cmd: commands.AddOutstandingSecurityFact, uow:
             u.commit()
         else:
             logger.info(f"OutstandingSecurity({cmd.outstanding}) couldnt be added, didnt find a Security which to assign it to.")
-        
+
 def add_security_accn_occurence(cmd: commands.AddSecurityAccnOccurence, uow: AbstractUnitOfWork):
     with uow as u:
         company: model.Company = u.company.get(symbol=cmd.symbol)

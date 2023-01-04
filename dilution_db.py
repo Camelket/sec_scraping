@@ -31,7 +31,7 @@ import main.parser.parsers as parsers
 from main.configs import cnf, GlobalConfig
 from _constants import FORM_TYPES_INFO, EDGAR_BASE_ARCHIVE_URL
 from main.services.messagebus import MessageBus
-from main.domain import commands
+from main.domain import commands, model
 
 # from main.adapters.repository import AbstractRepository
 # from main.adapters.orm import start_mappers
@@ -108,7 +108,38 @@ class DilutionDB:
         self.tracked_forms = self._get_tracked_forms_from_config() if tracked_forms is None else tracked_forms
         self.util = DilutionDBUtil(self)
         self.updater = DilutionDBUpdater(self)
-       
+    
+    def _is_security_present(self, symbol: str, security_name: str):
+        '''return the if a security with given security_name is present for company with given symbol.'''
+        with self.uow as uow:
+            company: model.Company = uow.company.get(symbol=symbol, lazy=True)
+            if not company:
+                raise model.CompanyNotFound(f"{symbol} couldnt be found in the database. Make sure to add the company before querying against it to avoid this exception.")
+            security = company.get_security_by_name(name=security_name)
+            if security:
+                return True
+            else:
+                return False
+    
+    def _ensure_common_stock_security_is_added(self, cik: str, symbol: str) -> None:
+        try:
+            is_present = self._is_security_present(symbol, "common stock")
+        except model.CompanyNotFound as e:
+            logger.warning(f"common stock not added to {symbol}, because of Exception: {e}")
+            return
+        if is_present:
+            return
+        else:
+            cmd = commands.AddSecurities(
+                cik,
+                symbol, 
+                securities=[model.Security(
+                                model.CommonShare(),
+                                name="common stock",
+                                underlying=None)]
+                )
+            self.bus.handle(cmd)
+            return
 
     def _get_tracked_tickers_from_config(self):
         return self.config.APP_CONFIG.TRACKED_TICKERS
@@ -456,9 +487,9 @@ class DilutionDB:
         except Exception as e:
             raise e
     
-    def _init_outstanding_shares(self, connection: Connection, id: int, companyfacts):
+    def _init_outstanding_shares(self, connection: Connection, id: int, cik: str, symbol: str, companyfacts):
         '''inital population of outstanding shares based on companyfacts'''
-        self.updater._update_outstanding_shares_based_on_companyfacts(connection, id, companyfacts)
+        self.updater._update_outstanding_common_shares_based_on_companyfacts(cik=cik, symbol=symbol, companyfacts=companyfacts)
         self._update_company_lud(connection, id, "outstanding_shares_lud", datetime.utcnow())
     
     def _init_net_cash_and_equivalents(self, connection: Connection, id: int, companyfacts):
@@ -697,29 +728,72 @@ class DilutionDBUpdater:
     def __init__(self, db: DilutionDB):
         self.db = db
         self.dl = Downloader(root_path=db.config.DOWNLOADER_ROOT_PATH)
-
-    def update_ticker(self, ticker: str):
+    
+    def update_ticker(self, symbol: str):
         '''
         main entry point to update a ticker.
 
         Args:
-            ticker: symbol of a company in the database 
+            symbol: symbol of a company in the database 
         '''
+        self.update_bulk_files()
+        self.update_outstanding_common_shares(symbol=symbol)
         with self.db.conn() as conn:
-            # make sure we are working with the most current bulk files
-            self.update_bulk_files()
-            # make sure we are working with the newest filings
-            self.update_local_filings(conn, ticker)
-            # parsing of filings goes here
-            self.update_filing_values(conn, ticker)
-            # update all the information tables
-            self.update_outstanding_shares(conn, ticker)
-            self.update_net_cash_and_equivalents(conn, ticker)
-            self.force_cashBurn_update(ticker)
+            self.update_net_cash_and_equivalents(connection=conn, ticker=symbol)
+        self.force_cashBurn_update(ticker=symbol)
+        with self.db.conn() as conn:
+            self.update_local_filings(connection=conn, symbol=symbol)
+            self.update_filing_values(connection=conn, symbol=symbol)
     
+    def update_outstanding_common_shares(self, symbol: str):
+        '''update the outstanding shares information table.
+        
+        Args:
+            symbol: symbol of company
+        '''
+        company = self.db.read_company_by_symbol(symbol=symbol)
+        if company != []:
+            company = company[0]
+            cik = company["cik"]
+            id = company["id"]
+            self._update_outstanding_common_shares_based_on_companyfacts(
+                cik=cik,
+                symbol=symbol,
+                companyfacts=self.db.util._get_companyfacts_file(cik)
+                )
 
-    def update_filing_values(self, connection: Connection, ticker: str):
-       self.db.util.parse_filings(connection, ticker)
+            # update outstanding shares by other means
+                # no other ways yet
+            # if all successfull write new lud
+            with self.db.conn() as connection:
+                #TODO: add a command and handler for update_company_lud
+                self.db._update_company_lud(connection, id, "outstanding_shares_lud", datetime.utcnow())
+        
+    def _update_outstanding_common_shares_based_on_companyfacts(self, cik: str, symbol: str, companyfacts):
+        try:
+            outstanding_shares = get_outstanding_shares(companyfacts)
+            if outstanding_shares is None:
+                logger.warning(("couldnt get outstanding_shares extracted from companyfacts for: ", symbol))
+                return None
+        except ValueError as e:
+            logger.critical((e, symbol))
+            return None
+        except KeyError as e:
+            logger.critical((e, symbol))
+            return None
+        logger.debug(f"outstanding_shares: {outstanding_shares}")
+        outstanding = []
+        for fact in outstanding_shares:
+            outstanding.append(model.SecurityOutstanding(fact["val"], fact["end"]))
+        cmd = commands.AddOutstandingSecurityFact(
+            cik=cik,
+            symbol=symbol,
+            attributes={"name": "common stock"},
+            outstanding=outstanding)
+        self.db.bus.handle(cmd) 
+
+    def update_filing_values(self, connection: Connection, symbol: str):
+       self.db.util.parse_filings(connection, symbol)
                 
 
     def _filings_needs_update(self, ticker: str, max_age=24):
@@ -750,10 +824,10 @@ class DilutionDBUpdater:
             return None, None
 
     
-    def update_local_filings(self, connection: Connection, ticker: str):
+    def update_local_filings(self, connection: Connection, symbol: str):
         '''download new filings if available'''
-        logger.debug(f"updating local filings for: {ticker}")
-        needs_update, filings_lud = self._filings_needs_update(ticker)
+        logger.debug(f"updating local filings for: {symbol}")
+        needs_update, filings_lud = self._filings_needs_update(symbol)
         if filings_lud is None:
             filings_lud = datetime(2000, 1, 1).date()
         logger.debug(f"local filings---")
@@ -762,7 +836,7 @@ class DilutionDBUpdater:
         if needs_update is None:
             raise AttributeError("ticker not found")
         if needs_update is True:
-            company = self.db.read_company_by_symbol(ticker)
+            company = self.db.read_company_by_symbol(symbol)
             if company != []:
                 company = company[0]
                 cik = company["cik"]
@@ -866,31 +940,7 @@ class DilutionDBUpdater:
             # update based on other things than companyfacts here
 
             # if all successfull write new lud
-            self.db._update_company_lud(connection, id, "net_cash_and_equivalents_lud", datetime.utcnow())
-
-    
-    def update_outstanding_shares(self, connection: Connection, ticker: str):
-        '''update the outstanding shares information table.
-        
-        Args:
-            c: connection from the database connection pool
-            ticker: symbol of company
-        '''
-        company = self.db.read_company_by_symbol(ticker)
-        if company != []:
-            company = company[0]
-            cik = company["cik"]
-            id = company["id"]
-            self._update_outstanding_shares_based_on_companyfacts(
-                connection,
-                id,
-                self.db.util._get_companyfacts_file(cik))
-
-            # update outstanding shares by other means
-                # no other ways yet
-            # if all successfull write new lud
-            self.db._update_company_lud(connection, id, "outstanding_shares_lud", datetime.utcnow())
-        
+            self.db._update_company_lud(connection, id, "net_cash_and_equivalents_lud", datetime.utcnow())       
     
     def _update_net_cash_and_equivalents_based_on_companyfacts(self, connection: Connection, id: int, companyfacts):
         try:
@@ -934,29 +984,6 @@ class DilutionDBUpdater:
             logger.debug((e, id))
             raise e 
 
-    
-    def _update_outstanding_shares_based_on_companyfacts(self, c: Connection, id: int, companyfacts):
-        try:
-            outstanding_shares = get_outstanding_shares(companyfacts)
-            if outstanding_shares is None:
-                logger.critical(("couldnt get outstanding_shares extracted", id))
-                return None
-        except ValueError as e:
-            logger.critical((e, id))
-            return None
-        except KeyError as e:
-            logger.critical((e, id))
-            return None
-        logger.debug(f"outstanding_shares: {outstanding_shares}")
-        for fact in outstanding_shares:
-            self.db.create_outstanding_shares(
-                c,
-                id,
-                fact["end"],
-                fact["val"])
-        
-
-    
     def force_cashBurn_update(self, ticker: str):
         '''clear cash burn rate and summary data and recalculate for one company
         based on the available data from the database. Doesnt pull new data.'''
@@ -1267,6 +1294,7 @@ class DilutionDBUtil:
     
     
     def _inital_population(self, db: DilutionDB,  dl: Downloader, polygon_client: PolygonClient, polygon_overview_files_path: str, ticker: str):
+        # TODO[epic=important]: rework to use model and uow instead of direct calls where applicable
         '''
         download none filing data and populate base information for a company.
         
@@ -1321,7 +1349,7 @@ class DilutionDBUtil:
                     connection.commit()
             with db.conn() as connection:   
                 try:
-                    db._init_outstanding_shares(connection, id, companyfacts)
+                    db._init_outstanding_shares(connection, id, ov["cik"], ticker, companyfacts)
                     db._init_net_cash_and_equivalents(connection , id, companyfacts)
                 except Exception as e:
                     logger.critical(("Phase1.1", e, ticker), exc_info=True)

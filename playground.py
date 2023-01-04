@@ -1704,28 +1704,66 @@ if __name__ == "__main__":
     #     "On April 20, 2022, we issued 10000 shares of our common stock at a price of 2$ per share through the placement agent.",
     #     ])
     # displacy_dep_with_search("We entered into an Agreement with Cerosa Inc. on May 5, 2021, pursuant to which we issued 5000 shares of common stock.")
-    alias_test_text = "On February 22, 2021, we entered into the Securities Purchase Agreement (the “Securities Purchase Agreement”), pursuant to which we agreed to issue the investor named therein (the “Investor”) 8,888,890 shares (the “Shares”) of our common stock, par value $0.000001 per share, at a purchase price of $2.25 per share, and a warrant to purchase up to 6,666,668 shares of our common stock (the “Investor Warrant”) in a private placement (the “Private Placement”). The closing of the Private Placement occurred on February 24, 2021. Pursuant to the Securities Purchase Agreement we also issued 10000 shares of our common stock through the Investor Warrant."
-    from main.parser.filing_nlp_alias_setter import AliasMatcher, AliasSetter
-    import spacy
-    # nlp = spacy.load("en_core_web_lg")
-    # doc = nlp(alias_test_text)
-    search = SpacyFilingTextSearch()
-    doc = search.nlp(alias_test_text)
-    alias_matcher = AliasMatcher(search.nlp.vocab)
-    doc = alias_matcher(doc)
-    p = [ent if ent.label_ in ["CONTRACT", "ORG", "PER", "SECU"] else None for ent in doc.ents]
-    origins = []
-    for i in p:
-        if i:
-            origins.append(i)
-    print(f"origins: {origins}")
-    alias_setter = AliasSetter()
-    doc = alias_setter(doc, origins)
-    print(doc[10:13])
-    print(doc._.alias_cache._origin_base_alias_map)
-    print(doc._.alias_cache._base_alias_references)
-    print(doc._.alias_cache.get_all_alias_references_by_origin(doc[10:13]))
+    def try_alias_cache():
+        alias_test_text = "On February 22, 2021, we entered into the Securities Purchase Agreement (the “Securities Purchase Agreement”), pursuant to which we agreed to issue the investor named therein (the “Investor”) 8,888,890 shares (the “Shares”) of our common stock, par value $0.000001 per share, at a purchase price of $2.25 per share, and a warrant to purchase up to 6,666,668 shares of our common stock (the “Investor Warrant”) in a private placement (the “Private Placement”). The closing of the Private Placement occurred on February 24, 2021. Pursuant to the Securities Purchase Agreement we also issued 10000 shares of our common stock through the Investor Warrant."
+        from main.parser.filing_nlp_alias_setter import AliasMatcher, AliasSetter
+        import spacy
+        # nlp = spacy.load("en_core_web_lg")
+        # doc = nlp(alias_test_text)
+        search = SpacyFilingTextSearch()
+        doc = search.nlp(alias_test_text)
+        alias_matcher = AliasMatcher(search.nlp.vocab)
+        doc = alias_matcher(doc)
+        p = [ent if ent.label_ in ["CONTRACT", "ORG", "PER", "SECU"] else None for ent in doc.ents]
+        origins = []
+        for i in p:
+            if i:
+                origins.append(i)
+        print(f"origins: {origins}")
+        alias_setter = AliasSetter()
+        doc = alias_setter(doc, origins)
+        print(doc[10:13])
+        print(doc._.alias_cache._origin_base_alias_map)
+        print(doc._.alias_cache._base_alias_references)
+        print(doc._.alias_cache.get_all_alias_references_by_origin(doc[10:13]))
     
+    def get_dilution_db_connected_to_test():
+        from boot import bootstrap_dilution_db
+        from main.configs import FactoryConfig
+        from main.services import unit_of_work
+        from sqlalchemy.orm import sessionmaker
+        from sqlalchemy import create_engine, text
+        cnf = FactoryConfig("dev")()
+        print(cnf.DILUTION_DB_CONNECTION_STRING)
+        session_factory = sessionmaker(
+            bind=create_engine(
+            url=cnf.DILUTION_DB_CONNECTION_STRING,
+            ),
+            expire_on_commit=False
+        )
+        uow = unit_of_work.SqlAlchemyCompanyUnitOfWork(session_factory=session_factory)
+        db = bootstrap_dilution_db(
+            start_orm=True,
+            config=cnf,
+            uow=uow)
+        return db
+    
+    db = get_dilution_db_connected_to_test()
+    # from main.domain import commands, model
+    # import datetime
+    # with db.uow as uow:
+    #     company = uow.company.get(symbol="CEI")
+    #     cmd = commands.AddOutstandingSecurityFact(company.cik, company.symbol, attributes={"name": "common stock"},
+    #     outstanding=[
+    #         model.SecurityOutstanding(25543, datetime.date(2018, 1, 1)),
+    #         model.SecurityOutstanding(30000, datetime.date(2018, 5, 2)),
+    #     ])
+    # db.bus.handle(cmd)
+    with db.conn() as conn:
+        # conn.execute("DELETE FROM securities_outstanding USING securities WHERE securities.company_id = (SELECT company_id FROM companies WHERE companies.symbol = 'CEI')")
+        # res = conn.execute("SELECT * FROM securities_outstanding AS os JOIN securities AS s ON s.id = os.security_id WHERE s.company_id = (SELECT id FROM companies WHERE companies.symbol = 'CEI')", []).fetchall()
+        res = conn.execute("SELECT * FROM securities_outstanding AS os JOIN securities AS s ON s.id = os.security_id WHERE s.company_id = (SELECT id FROM companies WHERE companies.symbol = 'CEI') ORDER BY os.security_id ASC").fetchall()
+        print(res)
     # need to check the quantity relations for existance of: daterelation, amount, amods of parent secu and quant 
     # displacy_dep_with_search("The common stock outstanding after the offering is based on 113,299,612 shares of our common stock outstanding as of December 31, 2019 and the sale of 36,057,692 shares of our common stock at an assumed offering price of $2.08 per share, the last reported sale price of our common stock on the NASDAQ on March 16, 2020 and excludes the following")
 # get text only of filing

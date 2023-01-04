@@ -490,7 +490,9 @@ CREATE TABLE IF NOT EXISTS securities_outstanding (
 
     CONSTRAINT fk_security_id
         FOREIGN KEY (security_id)
-            REFERENCES securities(id)
+            REFERENCES securities(id),
+        
+    CONSTRAINT security_id_amount_instant_unique UNIQUE (security_id, amount, instant),
 );
 
 CREATE TABLE IF NOT EXISTS securities_authorized (
