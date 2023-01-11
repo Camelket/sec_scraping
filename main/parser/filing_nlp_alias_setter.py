@@ -1,8 +1,11 @@
 from collections import defaultdict
 import re
 from spacy.tokens import Token, Span, Doc
+from spacy.vocab import Vocab
+from spacy.matcher import Matcher
 import logging
 from operator import itemgetter
+from typing import Generator
 from .filing_nlp_utils import _set_extension, get_dep_distance_between_spans, get_dep_distance_between, get_span_distance
 logger = logging.getLogger(__name__)
 
@@ -71,13 +74,238 @@ def get_longest_from_overlapping_groups(overlapping_tuples: list[list[tuple[int,
         longest.append(group[item_lengths.index(max(item_lengths))])
     return longest
       
+class AliasCache2:
+    '''reimplementation of the alias cache making multi origin aliases a possibility.
+    To make this change i need to change the alias_origin_map and add additional maps
+    '''
+
+    def __init__(self):
+        self._idx_alias_map: dict[int, tuple[int, int]] = dict()
+        self._sent_alias_map: dict[tuple[int, int], list[tuple[int, int]]] = defaultdict(list)
+        self._alias_sent_map: dict[tuple[int, int], tuple[int, int]] = dict()
+        self._already_assigned_aliases: set[tuple[int, int]] = set()
+        self._alias_origin_map: dict[tuple[int, int], tuple[int, int]] = dict()
+        self._origin_base_alias_map: dict[tuple[int, int], list[tuple[int, int]]] = defaultdict(list)
+        self._alias_assignment_score: dict[tuple[int, int], float] = dict()
+        self._unassigned_aliases: set[tuple[int, int]] = set()
+        self._base_alias_references: dict[tuple[int, int], list[tuple[int, int]]] = defaultdict(list)
+
+        self._components_to_alias: dict[tuple[tuple[int, int]], tuple[int, int]] = dict() #mapping multiple components to their base_alias
+        self._alias_to_components: dict[tuple[int, int], tuple[tuple[int, int]]] = dict() #component makeup of a multi component base alias
+        self._alias_to_ultimate_origin: dict[tuple[int, int], list[tuple[int, int]]] = dict() # map the alias to its ultimate single or multi origin
+        self._parent_map: dict[tuple[int, int], list[tuple[int, int]]] = defaultdict(list) # map an item to its immediate parent
+        self._children_map: dict[tuple[int, int], list[tuple[int, int]]] = defaultdict(list) # map an item to all its immediate children
+        self._tuple_to_type_map: dict[tuple[int, int], str] = dict() # map a tuple to its associacted type
+
+    def _add_multi_component_alias(self, alias: tuple[int, int], components: list[tuple[int, int]]):
+        # ensure components arent origins
+        for component in components:
+            if self._tuple_to_type_map[component] == "origin":
+                raise ValueError(f"A component of a multi_component_alias making up a new origin cant be itself an origin!")
+        # check if the components are registered as one of: base_alias or reference_alias
+        # assign final origins of alias
+        self._alias_to_ultimate_origin[alias] = self._bfs_ultimate_origins(components)
+        self._alias_to_components[alias] = components
+        for component in components:
+            self._add_parent(alias, component)
+        self._components_to_alias[(a for a in components)] = alias
+        # where do i update children and parent map
+        # add tuple type at same stage as parents and children
+        
+    def _bfs_ultimate_origins(self, components: list[tuple[int, int]]):
+        #  BFS search for all parents without parents (leaves of the tree)
+        ultimate_origin = []
+        for component in components:
+            origins = []
+            queue = [[component]]
+            node = component
+            visited = set()
+            while queue:
+                path = queue.pop(0)
+                node = path[-1]
+                if node == None:
+                    break
+                visited.add(node)
+                parents = self._parent_map.get(node, None)
+                if not parents or parents == []:                   
+                    origins.append(node)
+                    parents = []
+                else:
+                    for parent in parents:
+                        if parent in visited:
+                            continue
+                        new_path = list(path)
+                        new_path.append(parents)
+                        queue.append(new_path)
+            ultimate_origin += origins
+        return ultimate_origin
+    
+
+            # could i improve this if i looked up the node in the already existing ultimate origins
+
+        
+    def get_base_aliases_by_origin(self, origin: Token|Span) -> list[tuple[int, int]]|None:
+        '''get all assigned aliases to this origin.'''
+        origin_tuple = self._get_start_end_tuple(origin)
+        return self._origin_base_alias_map.get(origin_tuple, None)
+    
+    def get_all_aliases_by_origin(self, origin: Token|Span) -> dict[tuple[int, int], list[tuple[int, int]]]:
+        '''
+        returns a dict of base_alias and references to the alias(excluding origin, but including base alias).'''
+        result = dict()
+
+        base_aliases = self.get_base_aliases_by_origin(origin)
+        if base_aliases:
+            for base_tuple in base_aliases:
+                result[base_tuple] = []
+                references = self._base_alias_references[base_tuple]
+                if references:
+                    result[base_tuple] = references
+        return result
+    
+    def get_all_alias_references_by_origin(self, origin: Token|Span) -> list[tuple[int, int]]:
+        '''returns a list of all references to the base aliases connected to this origin'''
+        result = []
+        base_aliases = self.get_base_aliases_by_origin(origin)
+        if base_aliases:
+            for base_tuple in base_aliases:
+                references = self._base_alias_references[base_tuple]
+                if references:
+                    for ref in references:
+                        result.append(ref)
+        return result
+
+    def add_reference_to_alias(self, alias: Token|Span, reference: Token|Span):
+        alias_tuple = self._get_start_end_tuple(alias)
+        reference_tuple = self._get_start_end_tuple(reference)
+        self._add_reference_to_alias(alias_tuple, reference_tuple)
+    
+    def _add_parent(self, parent: tuple[int, int], child: tuple[int,int]):
+        if parent not in self._parent_map[child]:
+            self._parent_map[child].append(parent)
+
+    def _add_child(self, parent: tuple[int, int], child: tuple[int, int]):
+        if child not in self._children_map[parent]:
+            self._children_map[parent].append(child)
+        
+    def _add_child_parent_entry(self, parent: tuple[int, int], child: tuple[int, int]):
+        self._add_child(parent, child)
+        self._add_parent(parent, child)
+    
+    def _add_reference_to_alias(self, alias_tuple: tuple[int, int], reference_tuple: tuple[int, int]):
+        if (alias_tuple in self._already_assigned_aliases) or (alias_tuple in self._unassigned_aliases):
+            self._base_alias_references[alias_tuple].append(reference_tuple)
+            self._add_child_parent_entry(alias_tuple, reference_tuple)
+            self._tuple_to_type_map[reference_tuple] = "reference"
+        else:
+            logger.warning(f"Add the base Alias({alias_tuple}) first, before registering references to the base Alias.")  
+        
+    def add_alias(self, alias: Token|Span, references: list[Span]|None=None):
+        '''Add an alias to the map of aliases. No assignment happens here.'''
+        alias_tuple = self._get_start_end_tuple(alias)
+        for x in range(alias_tuple[0], alias_tuple[1]+1):
+            self._idx_alias_map[x] = alias_tuple
+        sent_start_end = self.get_sent_start_end_tuple(alias)
+        self._sent_alias_map[sent_start_end].append(alias_tuple)
+        self._alias_sent_map[alias_tuple] = sent_start_end
+        self._unassigned_aliases.add(alias_tuple)
+        if references:
+            for ref in references:
+                self.add_reference_to_alias(alias, ref)
+    
+    def assign_alias(self, alias: Token|Span, origin: Token|Span, score: float):
+        '''Assign an alias to an origin and set the similarity_score of the alias to the origin.'''
+        alias_tuple = self._get_start_end_tuple(alias)
+        origin_tuple = self._get_start_end_tuple(origin)
+        self._assign_alias(alias_tuple, origin_tuple, score)
+    
+    def unassign_alias(self, alias: Token|Span):
+        '''Remove the link between alias and origin and put the alias into an unassigned state'''
+        alias_tuple = self._get_start_end_tuple(alias)
+        self._unassign_alias(alias_tuple)
+
+    def remove_alias(self, alias: Token|Span):
+        '''Remove the alias completely (needs to be added again, alias loses assignment to origin)'''
+        alias_tuple = self._get_start_end_tuple(alias)
+        self._remove_alias(alias_tuple)
+    
+    def _remove_references(self, alias_tuple: tuple[int, int]):
+        if self._base_alias_references.get(alias_tuple, None):
+            self._base_alias_references.pop(alias_tuple)
+    
+    def _unassign_alias(self, alias_tuple: tuple[int, int]):
+        if alias_tuple in self._already_assigned_aliases:
+            # first remove assignments in orign to alias map
+            self._remove_alias_tuple_from_origin_alias_map(alias_tuple)
+            self._alias_origin_map.pop(alias_tuple)
+            self._alias_assignment_score.pop(alias_tuple)
+            self._unassigned_aliases.add(alias_tuple)
+
+    def _remove_alias_tuple_from_origin_alias_map(self, alias_tuple):
+        origin_tuple = self._alias_origin_map[alias_tuple]
+        idx_to_remove = None
+        for idx, each in self._origin_base_alias_map[origin_tuple]:
+            if each == alias_tuple:
+                idx_to_remove = idx
+                break
+        if idx_to_remove is not None:
+            self._origin_base_alias_map[origin_tuple].pop(idx_to_remove)
+    
+    def _remove_alias(self, alias_tuple: tuple[int, int]):
+        self._unassign_alias(alias_tuple)
+        self._remove_references(alias_tuple)
+        for x in range(alias_tuple[0], alias_tuple[1]+1):
+            self._idx_alias_map.pop(x)
+        self._remove_alias_tuple_from_sent_alias_map(alias_tuple)
+        self._alias_sent_map.pop(alias_tuple)
+
+    def _remove_alias_tuple_from_sent_alias_map(self, alias_tuple):
+        idx_to_remove = None
+        for idx, each in self._sent_alias_map[self._alias_sent_map[alias_tuple]]:
+            if each == alias_tuple:
+                idx_to_remove = idx
+                break
+        if idx_to_remove is not None:
+            self._sent_alias_map[self._alias_sent_map[alias_tuple]].pop(idx_to_remove)
+
+    def _assign_alias(self, alias_tuple: tuple[int, int], origin_tuple: tuple[int, int], score: float):
+        if alias_tuple not in self._unassigned_aliases:
+            if alias_tuple in self._already_assigned_aliases:
+                logger.warning(f"This alias_tuple:{alias_tuple} already is assigned to an origin:{self._alias_origin_map[alias_tuple]}")
+            else:
+                logger.warning(f"This alias_tuple:{alias_tuple} wasn't added yet. Use add_alias to add the alias before assigning the alias_tuple.")
+        else:
+            self._unassigned_aliases.remove(alias_tuple)
+            self._alias_origin_map[alias_tuple] = origin_tuple
+            self._alias_assignment_score = score
+            self._origin_base_alias_map[origin_tuple].append(alias_tuple)
+            self._tuple_to_type_map[origin_tuple] = "origin"
+    
+    def _get_start_end_tuple(self, alias: Token|Span):
+        if isinstance(alias, Token):
+            start_idx = alias.i
+            end_idx = alias.i
+        if isinstance(alias, Span):
+            start_idx = alias.start
+            end_idx = alias.end
+        return (start_idx, end_idx)
+    
+    def get_sent_start_end_tuple(self, alias: Token|Span):
+        if isinstance(alias, Token):
+            sent_start = alias.sent[0].i
+            sent_end = alias.sent[-1].i
+        elif isinstance(alias, Span):
+            sent_start = alias[0].sent[0].i
+            sent_end = alias[0].sent[-1].i
+        else:
+            raise TypeError(f"expecting spacy.tokens.Token or spacy.tokens.Span, got: {type(alias)}")
+        return (sent_start, sent_end)
+        
+
 
 class AliasCache:
     '''
     This is to keep track of alias assignment across AliasSetter/AliasMatcher Components.
-    Custom extensions added:
-        Doc extensions:
-            ??
     Usage:
         Get created in the AliasMatcher Component and made availabel as a custom Doc extension ._.alias_cache
         in the AliasMatcher Component:
@@ -277,20 +505,33 @@ class AliasMatcher:
     def __init__(self):
         self._set_needed_extensions()
         self.chars_to_tokens_map: dict = None
+        self.parentheses_base_alias_map: dict[tuple[int, int], list[tuple[int, int]]] = None
         self.aliases_are_set = False
 
     def __call__(self, doc: Doc):
         ensure_alias_cache_created(doc)
         self.chars_to_tokens_map = self._get_chars_to_tokens_map(doc)
-        base_aliases = self.get_base_alias_spans(doc)
-        base_to_references = self.get_references_to_base_alias_spans(doc, base_aliases)
-        self.add_aliases(doc, base_aliases, base_to_references)
+        doc._.parentheses_base_alias_map = self._get_parentheses_base_alias_map(doc, self.chars_to_tokens_map)
+        doc._.sent_parentheses_map = self._get_sent_parentheses_map(doc, doc._.parentheses_base_alias_map)
+        self.handle_base_aliases(doc, doc._.parentheses_base_alias_map)
         self.aliases_are_set = True
         return doc
+
+    def handle_base_aliases(self, doc: Doc, parentheses_base_alias_map: dict[tuple[int, int], list[tuple[int, int]]]):
+        base_aliases = []
+        for _, values in parentheses_base_alias_map.items():
+            if len(values) > 0:
+                for value in values:
+                    base_aliases.append(doc[value[0]:value[1]])
+        if len(base_aliases) > 0:
+            base_to_references = self.get_longest_references_to_spans(doc, base_aliases)
+            self.add_base_aliases(doc, base_aliases, base_to_references)
     
     def reinitalize_extensions(self, doc: Doc):
         doc._.alias_cache = None
         ensure_alias_cache_created(doc)
+        doc._.parentheses_base_alias_map = defaultdict(list)
+        doc._.sent_parentheses_map = defaultdict(list)
         doc._.base_alias_set = set()
         doc._.reference_alias_set = set()
         doc._.token_to_alias_map = dict()
@@ -319,7 +560,7 @@ class AliasMatcher:
             return False
         
         def is_part_of_alias(token: Token):
-            if token.i in token.doc._.token_to_alias_map.keys():
+            if token.doc._.token_to_alias_map.get(token.i, None) is not None:
                 return True
             return False
         
@@ -327,6 +568,8 @@ class AliasMatcher:
             return token.doc._.token_to_alias_map.get(token.i, None)
         
         doc_extensions = [
+            {"name": "parentheses_base_alias_map", "kwargs": {"default": defaultdict(list)}},
+            {"name": "sent_parentheses_map", "kwargs": {"default": defaultdict(list)}},
             {"name": "base_alias_set", "kwargs": {"default": set()}},
             {"name": "reference_alias_set", "kwargs": {"default": set()}},
             {"name": "token_to_alias_map", "kwargs": {"default": dict()}},
@@ -347,49 +590,73 @@ class AliasMatcher:
         for each in token_extensions:
             _set_extension(Token, each["name"], each["kwargs"])
 
-    def _get_chars_to_tokens_map(self, doc: Doc):
+    def _get_chars_to_tokens_map(self, doc: Doc) -> dict[int, int]:
         chars_to_tokens = {}
         for token in doc:
-            for i in range(token.idx, token.idx + len(token.text)):
+            for i in range(token.idx, token.idx + len(token.text) + 1):
                 chars_to_tokens[i] = token.i
         return chars_to_tokens
-
-    def get_base_alias_spans(self, doc: Doc) -> list[Span]:
-        # secu_alias_exclusions = set(["we", "us", "our"])
-        spans = []
-        parenthesis_pattern = re.compile(r"\([^(]*\)")
-        possible_alias_pattern = re.compile(r"(?:\"|“)([a-zA-Z]*[a-zA-Z\s-]*[a-zA-Z]*)(?:\"|”)")
-        for match in re.finditer(parenthesis_pattern, doc.text):
-            if match:
-                logger.debug(f"found possible base_alias match: {match}")
-                start_idx = match.start()
-                for possible_alias in re.finditer(
-                    possible_alias_pattern, match.group()
-                ):
-                    if possible_alias:
-                        logger.debug(f"possible_alias from base_alias match: {possible_alias}")
-                        start_token = self.chars_to_tokens_map.get(
-                            start_idx + possible_alias.start()
-                        )
-                        end_token = self.chars_to_tokens_map.get(
-                            start_idx + possible_alias.end() - 1
-                        )
-                        if (start_token is not None) and (end_token is not None):
-                            alias_span = doc[start_token + 1 : end_token]
-                            logger.debug(f"span created from base_alias match: {alias_span}")
-                            spans.append(alias_span)
-                        else:
-                            logger.debug(
-                                f"couldnt find start/end token for alias: {possible_alias}; start/end token: {start_token}/{end_token}"
-                            )
-        return spans
     
-    def get_references_to_base_alias_spans(self, doc: Doc, base_spans: list[Span]) -> dict[Span, list[Span]]:
-        # TODO: how can i handle the plural of the base_spans?
+    def _get_parentheses_matches(self, text: str) -> Generator[re.Match[str], None, None]:
+        parenthesis_pattern = re.compile(r"\([^(]*\)")
+        for match in re.finditer(parenthesis_pattern, text):
+            if match:
+                yield match
+            else:
+                yield None
+    
+    def _get_in_double_quote_matches(self, text: str) -> Generator[re.Match[str], None, None]:
+        double_quote_pattern = re.compile(r"(?:\"|“)([a-zA-Z]*[a-zA-Z\s-]*[a-zA-Z]*)(?:\"|”)")
+        for match in re.finditer(double_quote_pattern, text):
+            if match:
+                yield match
+            else:
+                yield None
+    
+    
+    def _get_parentheses_base_alias_map(self, doc: Doc, chars_to_tokens_map: dict[int, int]) -> dict[tuple[int,int], list[tuple[int, int]]]:
+        '''gets all base_alias start_end_token tuples and maps them to their parentheses start_end_token tuple, in discovery order.'''
+        parentheses_to_base_alias_spans: dict[tuple[int, int], list[tuple[int, int]]] = defaultdict(list)
+        for parentheses_match in self._get_parentheses_matches(doc.text):
+            if parentheses_match:
+                parentheses_start = chars_to_tokens_map.get(parentheses_match.start(), None)
+                parentheses_end = chars_to_tokens_map.get(parentheses_match.end(), None)
+                if (parentheses_end is None) or (parentheses_start is None):
+                    logger.warning(f"couldnt assign token to start/end char of parentheses, match_text/start_char/end_char/chars_to_tokens_map: {doc.text[parentheses_match.start():parentheses_match.end()]}/{parentheses_match.start()}/{parentheses_match.end()}/{chars_to_tokens_map}")
+                parentheses_start_end = (parentheses_start, parentheses_end + 1)
+                # print(f"parantheses_span: {doc[parentheses_start:parentheses_end + 1]}")
+                for quote_match in self._get_in_double_quote_matches(parentheses_match.group()):
+                    # +/- 1 to remove the matched double quotes
+                    if quote_match:
+                        alias_start = chars_to_tokens_map[quote_match.start() + parentheses_match.start()] + 1
+                        alias_end = chars_to_tokens_map[quote_match.end() + parentheses_match.start()] - 1
+                        parentheses_to_base_alias_spans[parentheses_start_end].append((alias_start, alias_end))
+        return parentheses_to_base_alias_spans
+    
+    def _get_sent_parentheses_map(self, doc: Doc, parentheses_base_alias_map: dict[tuple[int,int], list[tuple[int, int]]]):
+        parentheses_tuples = sorted(list(parentheses_base_alias_map.keys()), key=lambda x: x[0])
+        sent_parentheses_map = defaultdict(list)
+        if len(parentheses_tuples) > 0:
+            parentheses_idx = 0
+            for sent in doc.sents:
+                sent_tuple = (sent.start, sent.end)
+                parentheses_tuple = parentheses_tuples[parentheses_idx]
+                if (parentheses_tuple[0] > sent.start) and (parentheses_tuple[1] <= sent.end):
+                    sent_parentheses_map[sent_tuple].append(parentheses_tuple)
+                    parentheses_idx += 1
+                    if parentheses_idx == len(parentheses_tuples):
+                        break
+                else:
+                    continue
+        return sent_parentheses_map
+
+
+    def get_longest_references_to_spans(self, doc: Doc, base_spans: list[Span]) -> dict[Span, list[Span]]:
+        # TODO[epic="important"]: how can i handle the plural of the base_spans?
         all_start_end_tuples = []
         start_end_to_base_map = {}
         for base in base_spans:
-            print(f"current_base: {base.text}")
+            # print(f"current_base: {base.text}")
             pattern = re.compile(f"(?:[^a-zA-z])({re.escape(base.text)})(?:[^a-zA-z])")
             text_to_search = doc[base.end:].text
             for m in re.finditer(pattern, text_to_search):
@@ -425,7 +692,7 @@ class AliasMatcher:
             base_span_to_reference_span[start_end_to_base_map[each]].append(doc[each[0]:each[1]])
         return base_span_to_reference_span
 
-    def add_aliases(self, doc: Doc, base_aliases: list[Span], base_to_references: dict[Span, list[Span]]):
+    def add_base_aliases(self, doc: Doc, base_aliases: list[Span], base_to_references: dict[Span, list[Span]]):
         for alias in base_aliases:
             doc._.alias_cache.add_alias(alias)
             alias_start_end_tuple = (alias[0].i, alias[-1].i)
@@ -441,13 +708,20 @@ class AliasMatcher:
                     doc._.token_to_alias_map[i] = ref_start_end_tuple
 
 class AliasSetter:
-    # TODO: change __init__ params to set config
-    def __init__(self):
+    '''
+    Component which sets multi base alias relations and connects single compound 
+    base aliases to their origin.
+    
+    Relies on AliasMatcher being called on the Doc before!
+    '''
+    def __init__(self, vocab: Vocab):
         self.similarity_score_threshold: float = 1.4 #FIXME: add a sensible value after thinking of a better similarity score function
         self.very_similar_threshold: float = 0.65
         self.dep_distance_weight: float = 0.7
         self.span_distance_weight: float = 0.3
-    
+        self.multi_compound_alias_matcher = self._init_multi_component_alias_matcher(vocab)
+        self._is_multi_compound_alias_relationship_assignment_done: bool = False
+
     def __call__(self, doc: Doc, origins: list[Span]):
         self._ensure_alias_cache_present(doc)
         '''
@@ -458,13 +732,77 @@ class AliasSetter:
         5) see if we are above threshold for origin -> alias assignment
         6) if 5) assign alias to origin
         '''
-        self.assign_aliases_to_origins(doc, origins)
+        self.assign_single_component_base_aliases_to_origins(doc, origins)
+        if self._is_multi_compound_alias_relationship_assignment_done is False:
+            self._handle_relationships_for_multi_component_aliases(doc)
+            self._is_multi_compound_alias_relationship_assignment_done = True
         return doc
     
-    def assign_aliases_to_origins(self, doc: Doc, origins: list[Span]):
+    def _init_multi_component_alias_matcher(self, vocab: Vocab):
+        matcher = Matcher(vocab)
+        multi_compound_alias_patterns = [
+            [
+                {"_": {"is_part_of_alias": True}, "OP": "+"},
+                {"OP": "*"},
+                {"POS": "CCONJ"},
+                {"OP": "*"},
+                {"_": {"is_part_of_alias": True}, "OP": "+"}
+            ]
+        ]
+        matcher.add("multi_compound_alias", multi_compound_alias_patterns)
+        return matcher
+    
+    def _handle_relationships_for_multi_component_aliases(self, doc: Doc):
+        multi_component_base_alias_map = self._get_multi_component_base_alias_map(doc)
+        # call aliasCache add methode for each multi component alias
+    
+    def _has_expression_in_parentheses_before_alias_span(doc: Doc, parentheses: Span, alias_span: Span, expressions: list[str]):
+        if (parentheses.start < alias_span.start) or (parentheses.end < alias_span.end):
+            raise ValueError(f"alias_span is outside of the given parentheses span; expecting a alias_span within the parentheses span") 
+        text_before = doc[parentheses.start:alias_span.start].text
+        matches = []
+        for expression in expressions:
+            matches += [re.findall(expression, text_before)]
+        if len(matches) > 0:
+            return True
+        return False
+    
+    def get_first_single_component_base_alias_spans(self, doc: Doc) -> list[Span]:
+        first_single_component_base_alias_spans = []
+        for p, aliases in doc._.parentheses_base_alias_map.items():
+            counter = 0
+            for alias in aliases:
+                if counter > 0:
+                    break
+                if self._has_expression_in_parentheses_before_alias_span(
+                    p, 
+                    alias,
+                    expressions=["together", "and with", "collectively"]
+                    ) is True:
+                    counter += 1
+                    continue
+                else:
+                    first_single_component_base_alias_spans.append(doc[alias[0]:alias[1]])
+        return first_single_component_base_alias_spans
+    
+    def _get_multi_component_base_alias_map(self, doc: Doc) -> dict[tuple[int, int], list[tuple[int, int]]]:
+        multi_component_alias_map = defaultdict(list)
+        for parentheses_tuple, aliases in doc._.parentheses_base_alias_map.items():
+            if len(aliases) > 1:
+                parentheses_span = doc[parentheses_tuple[0]:parentheses_tuple[1]]
+                matches = self.multi_compound_alias_matcher(parentheses_span, as_spans=True)
+                if matches:
+                    print(f"multi_compound_alias_matches: {matches}")
+                    # filter matches for longest
+                    # find aliases, references in order of apperance
+                    # format matches to include: components, component_type, multi_component_base_alias
+            
+
+    def assign_single_component_base_aliases_to_origins(self, doc: Doc, origins: list[Span]):
+        # TODO[epic="important"]: change this to try and match single compound base aliases only
         assignment_history = []
         for origin in origins:
-            base_aliases = self._get_right_base_aliases_in_same_sent(doc, origin)
+            base_aliases = self._get_right_single_component_base_aliases_in_same_sent(doc, origin)
             if base_aliases:
                 best_alias, best_score = self._determine_best_alias(origin, base_aliases)
                 if best_alias:
@@ -490,7 +828,6 @@ class AliasSetter:
         return best_alias, best_score
     
     def _get_right_base_aliases_in_same_sent(self, doc: Doc, origin: Span) -> list[Span]|None:
-        # TODO: ensure somewhere that we pass aliases as Spans (create a Span if alias would be a single Token)
         '''get all base aliases in the same sentence with origin[-1].i < base_alias[0].i or None if none present'''
         result = []
         sent_start_end_tuple = doc._.alias_cache.get_sent_start_end_tuple(origin)
@@ -502,6 +839,39 @@ class AliasSetter:
             return result
         else:
             return None
+    
+    def _get_right_single_component_base_aliases_in_same_sent(self, doc: Doc, origin: Span) -> list[Span]|None:
+        '''
+        Get all base aliases in the same sentence with origin[-1].i < base_alias[0].i 
+        which are found inside of parentheses and arent excluded by 
+        preceding text inside of the parentheses.
+        '''
+        result = []
+        sent_start_end_tuple = doc._.alias_cache.get_sent_start_end_tuple(origin)
+        base_alias_in_sent = doc._.alias_cache._sent_alias_map[sent_start_end_tuple]
+        parentheses_in_sent = doc._.sent_parentheses_map[sent_start_end_tuple]
+        if base_alias_in_sent:
+            for base_alias in base_alias_in_sent:
+                if base_alias[0] > origin.start:
+                    base_alias_found_in_parentheses = False
+                    for parentheses in parentheses_in_sent:
+                        # TODO[epic="maybe"] alias is only valid if it is the first one 
+                        # in the list of base_aliases found in the parentheses
+                        if base_alias in doc._.parentheses_base_alias_map[parentheses]:
+                            base_alias_found_in_parentheses = True
+                            if self._has_expression_in_parentheses_before_alias_span(
+                                doc[parentheses[0]:parentheses[1]], 
+                                doc[base_alias[0]:base_alias[1]],
+                                expressions=["together", "and with", "collectively"]
+                                ) is False:
+                                result.append(base_alias)
+                    if base_alias_found_in_parentheses is False:
+                        logger.info(f"unahandled case for single compound alias found outside of parentheses, sent:base_alias{sent_start_end_tuple}:{base_alias}")
+        return result if result != [] else None
+
+                                # add control flow to add if not present in parentheses 
+                                # return result
+
     
     def _ensure_alias_cache_present(self, doc: Doc):
         if not Doc.has_extension("alias_cache"):

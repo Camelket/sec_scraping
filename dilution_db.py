@@ -110,7 +110,7 @@ class DilutionDB:
         self.updater = DilutionDBUpdater(self)
     
     def _is_security_present(self, symbol: str, security_name: str):
-        '''return the if a security with given security_name is present for company with given symbol.'''
+        '''return bool if a security with given security_name is present for company with given symbol.'''
         with self.uow as uow:
             company: model.Company = uow.company.get(symbol=symbol, lazy=True)
             if not company:

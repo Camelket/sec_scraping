@@ -449,7 +449,7 @@ class SECUMatcher:
     def __init__(self, vocab):
         self.vocab = vocab
         self.alias_matcher = AliasMatcher()
-        self.alias_setter = AliasSetter()
+        self.alias_setter = AliasSetter(vocab)
         self.matcher_SECU = Matcher(vocab)
         self.matcher_SECUREF = Matcher(vocab)
         self.matcher_SECUATTR = Matcher(vocab)
@@ -932,7 +932,7 @@ class AgreementMatcher:
 
     def __init__(self, vocab):
         self.alias_matcher = AliasMatcher()
-        self.alias_setter = AliasSetter()
+        self.alias_setter = AliasSetter(vocab)
         self.vocab = vocab
         self.matcher = Matcher(vocab)
         self.add_CONTRACT_ent_to_matcher()

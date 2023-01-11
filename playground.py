@@ -1720,7 +1720,7 @@ if __name__ == "__main__":
             if i:
                 origins.append(i)
         print(f"origins: {origins}")
-        alias_setter = AliasSetter()
+        alias_setter = AliasSetter(search.nlp.vocab)
         doc = alias_setter(doc, origins)
         print(doc[10:13])
         print(doc._.alias_cache._origin_base_alias_map)
