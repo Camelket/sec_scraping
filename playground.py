@@ -1748,7 +1748,8 @@ if __name__ == "__main__":
             uow=uow)
         return db
     
-    db = get_dilution_db_connected_to_test()
+    # db = get_dilution_db_connected_to_test()
+
     # from main.domain import commands, model
     # import datetime
     # with db.uow as uow:
@@ -1759,16 +1760,25 @@ if __name__ == "__main__":
     #         model.SecurityOutstanding(30000, datetime.date(2018, 5, 2)),
     #     ])
     # db.bus.handle(cmd)
-    with db.conn() as conn:
-        # conn.execute("DELETE FROM securities_outstanding USING securities WHERE securities.company_id = (SELECT company_id FROM companies WHERE companies.symbol = 'CEI')")
-        # res = conn.execute("SELECT * FROM securities_outstanding AS os JOIN securities AS s ON s.id = os.security_id WHERE s.company_id = (SELECT id FROM companies WHERE companies.symbol = 'CEI')", []).fetchall()
-        res = conn.execute("SELECT * FROM securities_outstanding AS os JOIN securities AS s ON s.id = os.security_id WHERE s.company_id = (SELECT id FROM companies WHERE companies.symbol = 'CEI') ORDER BY os.security_id ASC").fetchall()
-        print(res)
+    # with db.conn() as conn:
+    #     # conn.execute("DELETE FROM securities_outstanding USING securities WHERE securities.company_id = (SELECT company_id FROM companies WHERE companies.symbol = 'CEI')")
+    #     # res = conn.execute("SELECT * FROM securities_outstanding AS os JOIN securities AS s ON s.id = os.security_id WHERE s.company_id = (SELECT id FROM companies WHERE companies.symbol = 'CEI')", []).fetchall()
+    #     res = conn.execute("SELECT * FROM securities_outstanding AS os JOIN securities AS s ON s.id = os.security_id WHERE s.company_id = (SELECT id FROM companies WHERE companies.symbol = 'CEI') ORDER BY os.security_id ASC").fetchall()
+    #     print(res)
     # need to check the quantity relations for existance of: daterelation, amount, amods of parent secu and quant 
     # displacy_dep_with_search("The common stock outstanding after the offering is based on 113,299,612 shares of our common stock outstanding as of December 31, 2019 and the sale of 36,057,692 shares of our common stock at an assumed offering price of $2.08 per share, the last reported sale price of our common stock on the NASDAQ on March 16, 2020 and excludes the following")
-# get text only of filing
-# create doc of text    
-# call get_SECU_objects on doc
-# aggregate results
-# print results
-# compare to filing
+
+    from main.parser.filing_nlp_alias_setter import AliasMatcher, AliasSetter
+    from main.parser.filing_nlp import SECUMatcher, create_secu_matcher
+    import spacy
+
+    nlp = spacy.load("en_core_web_lg")
+    nlp.add_pipe("secu_matcher")
+    alias_matcher = AliasMatcher()
+    alias_setter = AliasSetter(nlp.vocab)
+    test_text =  "On March 8, 2021, Hoth Therapeutics, Inc. (the “Company”) entered into a securities purchase agreement (the “Purchase Agreement”) with certain institutional and accredited investors (the “Investors”) pursuant to which it agreed to sell an aggregate of (i) 6,826,962 shares (the “Shares”) of common stock, par value $0.0001 per share (the “Common Stock”), (ii) warrants (the “Pre-Funded Warrants”) to purchase up to 767,975 shares (the “Pre-funded Warrant Shares”) of Common Stock and (iii) warrants (the “Common Stock Warrants” and together with the Pre-Funded Warrants, the “Warrants”) to purchase up to 7,594,937 shares (the “Warrant Shares” and together with the Shares and the Pre-Funded Warrant Shares, the “Registrable Securities”) of Common Stock at a purchase price of $1.975 per share and accompanying warrant in a private placement for aggregate gross proceeds of approximately $15 million, exclusive of placement agent commission and fees and other offering expenses (the “Offering”). The closing of the Offering is expected to occur on March 10, 2021, subject to the satisfaction of customary closing conditions."
+
+
+    doc = nlp(test_text)
+    doc = alias_matcher(doc)
+    doc = alias_setter(doc, doc._.secus)

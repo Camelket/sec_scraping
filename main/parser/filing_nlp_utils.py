@@ -4,9 +4,47 @@ from spacy.tokens import Token, Span, Doc
 import pandas as pd
 import logging
 import string
-from typing import Iterable
+from typing import Iterable, Set
 
 logger = logging.getLogger(__name__)
+
+def filter_matches(matches):
+    """works as spacy.util.filter_spans but for matches"""
+    if len(matches) <= 1:
+        return matches
+    # logger.debug(f"pre filter matches: {[m for m in matches]}")
+    get_sort_key = lambda match: (match[2] - match[1], -match[1])
+    sorted_matches = sorted(matches, key=get_sort_key, reverse=True)
+    result = []
+    seen_tokens: Set[int] = set()
+    for match in sorted_matches:
+        # Check for end - 1 here because boundaries are inclusive
+        if match[1] not in seen_tokens and match[2] - 1 not in seen_tokens:
+            result.append(match)
+            seen_tokens.update(range(match[1], match[2]))
+    result = sorted(result, key=lambda match: match[1])
+    return result
+
+
+def filter_dep_matches(matches):
+    """take the longest of the dep matches with same start token, discard rest"""
+    if len(matches) <= 1:
+        return matches
+    len_map = {}
+    result_map = {}
+    # logger.debug(f"filtering dep matches: {matches}")
+    for match in matches:
+        if match[1][0] not in len_map.keys():
+            len_map[match[1][0]] = len(match[1])
+            result_map[match[1][0]] = match
+        else:
+            current_len = len(match[1])
+            if current_len <= len_map[match[1][0]]:
+                pass
+            else:
+                len_map[match[1][0]] = len(match[1])
+                result_map[match[1][0]] = match
+    return [v for _, v in result_map.items()]
 
 def _set_extension(cls, name, kwargs):
     if not cls.has_extension(name):
@@ -96,17 +134,30 @@ def get_dep_distance_between(origin: Token, target: Token) -> int:
         None: if origin and target arent part of the same tree
     """
     is_in_same_tree = False
-    if origin.is_ancestor(target):
-        is_in_same_tree = True
-        start = origin
-        end = target
-    if target.is_ancestor(origin):
-        is_in_same_tree = True
-        start = target
-        end = origin
-    if is_in_same_tree:
-        path = BFS_non_recursive(start, end)
-        return len(path)
+    is_in_same_sent = False
+    if origin.sent == target.sent:
+        is_in_same_sent = True
+        if origin.is_ancestor(target):
+            is_in_same_tree = True
+            start = origin
+            end = target
+        elif target.is_ancestor(origin):
+            is_in_same_tree = True
+            start = target
+            end = origin
+    if is_in_same_sent:
+        if is_in_same_tree:
+            path = BFS_non_recursive(start, end)
+            return len(path)
+        else:
+            common_ancestor = None
+            for token in origin.ancestors:
+                if token.is_ancestor(target):
+                    common_ancestor = token
+                    break
+            else:
+                return None
+            return len(BFS_non_recursive(common_ancestor, target)) + len(BFS_non_recursive(common_ancestor, origin))
     else:
         return None
 

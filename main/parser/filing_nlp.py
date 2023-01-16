@@ -15,7 +15,9 @@ from main.parser.filing_nlp_utils import (
     MatchFormater,
     _set_extension,
     get_none_alias_ent_type_spans,
-    get_none_alias_ent_type_tuples
+    get_none_alias_ent_type_tuples,
+    filter_dep_matches,
+    filter_matches,
 )
 from main.parser.filing_nlp_certainty_setter import create_certainty_setter
 from main.parser.filing_nlp_negation_setter import create_negation_setter
@@ -1782,44 +1784,6 @@ def _get_amods_of_target_token(target: Token):
     return amods
 
 
-
-def filter_matches(matches):
-    """works as spacy.util.filter_spans but for matches"""
-    if len(matches) <= 1:
-        return matches
-    # logger.debug(f"pre filter matches: {[m for m in matches]}")
-    get_sort_key = lambda match: (match[2] - match[1], -match[1])
-    sorted_matches = sorted(matches, key=get_sort_key, reverse=True)
-    result = []
-    seen_tokens: Set[int] = set()
-    for match in sorted_matches:
-        # Check for end - 1 here because boundaries are inclusive
-        if match[1] not in seen_tokens and match[2] - 1 not in seen_tokens:
-            result.append(match)
-            seen_tokens.update(range(match[1], match[2]))
-    result = sorted(result, key=lambda match: match[1])
-    return result
-
-
-def filter_dep_matches(matches):
-    """take the longest of the dep matches with same start token, discard rest"""
-    if len(matches) <= 1:
-        return matches
-    len_map = {}
-    result_map = {}
-    # logger.debug(f"filtering dep matches: {matches}")
-    for match in matches:
-        if match[1][0] not in len_map.keys():
-            len_map[match[1][0]] = len(match[1])
-            result_map[match[1][0]] = match
-        else:
-            current_len = len(match[1])
-            if current_len <= len_map[match[1][0]]:
-                pass
-            else:
-                len_map[match[1][0]] = len(match[1])
-                result_map[match[1][0]] = match
-    return [v for _, v in result_map.items()]
 
 
 def _convert_matches_to_spans(doc, matches):
