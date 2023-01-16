@@ -8,6 +8,29 @@ from typing import Iterable, Set
 
 logger = logging.getLogger(__name__)
 
+def create_single_token_span(token: Token):
+    if isinstance(token, Span):
+        return token
+    if isinstance(token, Token):
+        return Span(token.doc, token.i, token.i + 1, token.ent_type_)
+    raise TypeError(f"create_single_token_span got unhandled type; function is expecting spacy.token.Token got type: {type(token)}")
+
+def change_capitalization_after_symbol(text: str, symbol: str):
+    '''changes the capitalization of the first letter after each symbol in text and returns it'''
+    if symbol in text:
+        new_text = ""
+        for idx, letter in enumerate(text):
+            new_letter = letter
+            if (idx > 0) and (idx < len(text) - 1):
+                if text[idx-1] == symbol:
+                    if letter.isupper():
+                        new_letter = letter.lower()
+                    else:
+                        new_letter = letter.upper()
+            new_text = new_text + new_letter
+        return new_text
+    return text
+
 def filter_matches(matches):
     """works as spacy.util.filter_spans but for matches"""
     if len(matches) <= 1:

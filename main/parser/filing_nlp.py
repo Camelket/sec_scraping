@@ -282,6 +282,9 @@ class SECUQuantityMatcher:
         Span extensions:
             - ._.secuquantity (easy access to underlying value as a float)
             - ._.secuquantity_unit (type of unit associated with the quantity, either MONEY or COUNT)
+        
+        Doc extension:
+            - ._.secuquantity_spans (easy access) #type: list[Span]
     
     This component needs to be placed after the SECUMatcher component or
     a custom component which adds SECU entities to the doc and sets the needed
@@ -293,6 +296,7 @@ class SECUQuantityMatcher:
         self.matcher = Matcher(vocab)
         self._set_needed_extensions()
         self.add_SECUQUANTITY_ent_to_matcher(self.matcher)
+        logger.debug("Initialized SECUQUantityMatcher.")
     
     
     def _set_needed_extensions(self):
@@ -304,10 +308,15 @@ class SECUQuantityMatcher:
             {"name": "secuquantity", "kwargs": {"getter": get_span_secuquantity_float}},
             {"name": "secuquantity_unit", "kwargs": {"default": None}},
         ]
+        doc_extensions = [
+            {"name": "secuquantity_spans", "kwargs": {"default": list()}},
+        ]
         for each in span_extensions:
             _set_extension(Span, each["name"], each["kwargs"])
         for each in token_extensions:
             _set_extension(Token, each["name"], each["kwargs"])
+        for each in doc_extensions:
+            _set_extension(Doc, each["name"], each["kwargs"])
     
     def add_SECUQUANTITY_ent_to_matcher(self, matcher: Matcher):
         matcher.add(
@@ -315,7 +324,6 @@ class SECUQuantityMatcher:
             [*SECUQUANTITY_ENT_PATTERNS],
             on_match=_add_SECUQUANTITY_ent_regular_case,
         )
-        logger.debug("added SECUQUANTITY patterns to matcher")
 
     def __call__(self, doc: Doc):
         self.matcher(doc)
@@ -759,13 +767,15 @@ def _add_SECUQUANTITY_ent_regular_case(matcher, doc: Doc, i, matches):
         )
     entity = Span(doc, start, end, label="SECUQUANTITY")
     # logger.debug(f"Adding ent_label: SECUQUANTITY. Entity: {entity} [{start}-{end}], original_match:{doc[match_start:match_end]} [{match_start}-{match_end}]")
-    _set_secuquantity_unit_on_span(match_tokens, entity)
+    # TODO: call _set_secuquantity_unit_on_span after we handle overlapping ents
     try:
         doc.ents += (entity,)
     except ValueError as e:
         if "[E1010]" in str(e):
             # logger.debug("handling overlapping ents")
-            handle_overlapping_ents(doc, start, end, entity)
+            entity = handle_overlapping_ents(doc, start, end, entity)
+    _set_secuquantity_unit_on_span(match_tokens, entity)
+    doc._.secuquantity_spans.append(entity)
 
 
 def _set_secuquantity_unit_on_span(match_tokens: Span, span: Span):
@@ -838,7 +848,7 @@ def handle_overlapping_ents(
     end: int,
     entity: Span,
     overwrite_labels: Optional[list[str]] = None,
-):
+) -> Span:
     previous_ents = set(doc.ents)
     conflicting_ents = get_conflicting_ents(
         doc, start, end, overwrite_labels=overwrite_labels
@@ -877,6 +887,8 @@ def handle_overlapping_ents(
 
                 logger.debug(f"conflicting with entity: {conflicting_entity}")
                 raise e
+        else:
+            return entity
         # logger.debug(f"Added entity: {entity} with label: {entity.label_}")
 
 

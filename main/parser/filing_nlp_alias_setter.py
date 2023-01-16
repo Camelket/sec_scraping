@@ -6,7 +6,7 @@ from spacy.matcher import Matcher
 import logging
 from operator import itemgetter
 from typing import Generator
-from .filing_nlp_utils import _set_extension, get_dep_distance_between_spans, get_span_distance, filter_dep_matches
+from .filing_nlp_utils import _set_extension, get_dep_distance_between_spans, get_span_distance, change_capitalization_after_symbol
 logger = logging.getLogger(__name__)
 
 def get_all_overlapping_intervals(array: list[tuple[int, int]]) -> list[tuple[int, int]]:
@@ -226,8 +226,6 @@ class AliasCache:
         
     def add_alias(self, alias: Token|Span, references: list[Span]|None=None):
         '''Add an alias to the map of aliases. No assignment happens here.'''
-        #TODO: make changes to move unrelated variables from AliasSetter to AliasCache
-        # change: Add, remove, assign
         alias_tuple = self._get_start_end_tuple(alias)
         for x in range(alias_tuple[0], alias_tuple[1]+1):
             self._idx_alias_map[x] = alias_tuple
@@ -507,8 +505,16 @@ class AliasMatcher:
                 if parentheses_idx >= len(parentheses_tuples):
                     break
         return sent_parentheses_map
-
-
+    
+    def _get_regex_reference_patterns(self, span: Span) -> list[tuple[re.Pattern, str]]:
+        patterns = [(re.compile(f"(?:[^a-zA-z])({re.escape(span.text)})(?:[^a-zA-z])"), span.text)]
+        if "-" in span.text:
+            core_str = change_capitalization_after_symbol(span.text, '-')
+            recapitalized_pattern = re.compile(
+                f"(?:[^a-zA-z])({re.escape(core_str)})(?:[^a-zA-z])")
+            patterns.append((recapitalized_pattern, core_str))
+        return patterns
+        
     def get_longest_references_to_spans(self, doc: Doc, base_spans: list[Span]) -> dict[Span, list[Span]]:
         # TODO[epic="important"]: how can i handle the plural of the base_spans?
         all_start_end_tuples = []
@@ -517,56 +523,54 @@ class AliasMatcher:
         logger.debug(f"get_longest_references_to_spans; used base_spans: {base_spans}")
         for base in base_spans:
             # print(f"current_base: {base.text}")
-            pattern = re.compile(f"(?:[^a-zA-z])({re.escape(base.text)})(?:[^a-zA-z])")
+            patterns = self._get_regex_reference_patterns(base)
+            logger.debug(f"working with reference core_str: {[p[1] for p in patterns]}")
             text_to_search = doc[base.end:].text
-            for m in re.finditer(pattern, text_to_search):
-                if m:
-                    match = re.search(base.text, text_to_search[m.span()[0]:m.span()[1]+1])
-                    if match:
-                        search_start_offset = (len(doc.text) - len(text_to_search))
-                        start_char = search_start_offset + m.start() + match.start()
-                        end_char = search_start_offset + m.start() + match.end() - 1
-                    start_token = self.chars_to_tokens_map.get(start_char)
-                    end_token =  self.chars_to_tokens_map.get(end_char) + 1
-                    if (start_token and end_token):
-                        is_invalid = False
-                        for x in range(start_token, end_token + 1):
-                            if x in doc._.alias_cache._base_alias_covered_tokens:
-                                logger.debug(f"get_longest_references_to_spans disregarded match {m} because tokens in it are covered by a base_alias")
-                                is_invalid = True
-                                break
-                        start_end = (start_token, end_token)
-                        if is_invalid is False:
-                            logger.debug(f"found base -> reference: {base} -> {doc[start_token:end_token]}")
-                            # issue is mistyped capitalization in source text for not discovering Pre funded warrant shares reference ...
-                            # how to solve this?
-                            if start_end_to_base_map.get(start_end, None):
-                                old_base = start_end_to_base_map[start_end]
-                                new_base = base
-                                if len(old_base) > len(new_base):
-                                    pass
-                                else:
-                                    start_end_to_base_map[start_end] = new_base
+            for (pattern, core_str) in patterns:
+                for m in re.finditer(pattern, text_to_search):
+                    if m:
+                        match = re.search(core_str, text_to_search[m.span()[0]:m.span()[1]+1])
+                        if match:
+                            search_start_offset = (len(doc.text) - len(text_to_search))
+                            start_char = search_start_offset + m.start() + match.start()
+                            end_char = search_start_offset + m.start() + match.end() - 1
+                            start_token = self.chars_to_tokens_map.get(start_char)
+                            end_token =  self.chars_to_tokens_map.get(end_char) + 1
+                            if (start_token and end_token):
+                                is_invalid = False
+                                for x in range(start_token, end_token + 1):
+                                    if x in doc._.alias_cache._base_alias_covered_tokens:
+                                        logger.debug(f"get_longest_references_to_spans disregarded match {m} because tokens in it are covered by a base_alias")
+                                        is_invalid = True
+                                        break
+                                start_end = (start_token, end_token)
+                                if is_invalid is False:
+                                    logger.debug(f"found base -> reference: {base} -> {doc[start_token:end_token]}")
+                                    if start_end_to_base_map.get(start_end, None):
+                                        old_base = start_end_to_base_map[start_end]
+                                        new_base = base
+                                        if len(old_base) > len(new_base):
+                                            pass
+                                        else:
+                                            start_end_to_base_map[start_end] = new_base
+                                    else:
+                                        start_end_to_base_map[start_end] = base
+                                    all_start_end_tuples.append(start_end)
                             else:
-                                start_end_to_base_map[start_end] = base
-                            all_start_end_tuples.append(start_end)
-                    else:
-                        logger.debug(f"couldnt find start/end token for match: {match}; start/end token: {start_token}/{end_token}")
+                                logger.debug(f"couldnt find start/end token for match: {match}; start/end token: {start_token}/{end_token}")
         overlapping, overlapping_groups = get_all_overlapping_intervals(all_start_end_tuples)
         longest_from_groups = get_longest_from_overlapping_groups(overlapping_groups)
-        logger.info(f"all_start_end_tuples: {all_start_end_tuples}")
-        logger.info(f"overlapping: {overlapping}")
-        logger.info(f"overlapping_groups: {overlapping_groups}")
-        logger.info(f"longest_from_groups: {longest_from_groups}")
+        logger.debug(f"all_start_end_tuples: {all_start_end_tuples}")
+        logger.debug(f"overlapping_groups: {overlapping_groups}")
+        logger.debug(f"longest_from_groups: {longest_from_groups}")
         base_span_to_reference_span = defaultdict(list)
         for each in longest_from_groups:
             base_span_to_reference_span[start_end_to_base_map[each]].append(doc[each[0]:each[1]])
         none_overlapping = list(set(all_start_end_tuples) - set(overlapping))
         for each in none_overlapping:
             base_span_to_reference_span[start_end_to_base_map[each]].append(doc[each[0]:each[1]])
-        logger.info(f"base_span_to_alias_span: base -> refrences")
+        logger.info(f"base_span_to_alias_span: base -> references")
         for base, references in base_span_to_reference_span.items():
-            # are the references overlapping, if so-- how to avoid?
             logger.info(f"- {base} {(base.start, base.end)} -> {references} {[(ref.start, ref.end) for ref in references]}")
         return base_span_to_reference_span
 
@@ -616,10 +620,10 @@ class AliasSetter:
         if self._is_multi_compound_alias_relationship_assignment_done is False:
             self._handle_relationships_for_multi_component_aliases(doc)
             self._is_multi_compound_alias_relationship_assignment_done = True
-        logger.debug(f"doc._.parentheses_base_alias_map: parentheses tuple -> base_alias spans")
-        for parentheses_tuple, base_alias_tuples in doc._.parentheses_base_alias_map.items():
-            logger.debug(f"- {parentheses_tuple} -> {[doc[i[0]:i[1]] for i in base_alias_tuples]}")
-        logger.debug("----")
+        # logger.debug(f"doc._.parentheses_base_alias_map: parentheses tuple -> base_alias spans")
+        # for parentheses_tuple, base_alias_tuples in doc._.parentheses_base_alias_map.items():
+        #     logger.debug(f"- {parentheses_tuple} -> {[doc[i[0]:i[1]] for i in base_alias_tuples]}")
+        # logger.debug("----")
         return doc
     
     def _init_multi_component_alias_matcher(self, vocab: Vocab):

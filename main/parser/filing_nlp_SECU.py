@@ -13,36 +13,6 @@ from main.parser.filing_nlp_patterns import (
 import logging
 logger = logging.getLogger(__name__)
 
-#TODO: remove from filing_nlp and add imports instead
-
-# class FloatAmount:
-#     def __init__(self, amount: float):
-#         self.amount = amount
-
-#     def __eq__(self, other):
-#         if isinstance(other, FloatAmount):
-#             if self.amount == other.amount:
-#                 return True
-#         return False
-
-#     def __repr__(self):
-#         return f"{self.amount}"
-
-
-# class Unit:
-#     def __init__(self, unit: str):
-#         self.unit = unit
-
-#     def __eq__(self, other):
-#         if isinstance(other, Unit):
-#             if self.unit == other.unit:
-#                 return True
-#         return False
-
-#     def __repr__(self):
-#         return self.unit
-
-
 class UnitAmount:
     def __init__(self, amount, unit):
         self.amount: float = amount
