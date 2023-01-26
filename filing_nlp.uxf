@@ -1,0 +1,90 @@
+<diagram program="umletino" version="15.0.0"><zoom_level>7</zoom_level><help_text>Space for diagram notes
+</help_text><element><id>UMLClass</id><coordinates><x>103</x><y>668</y><w>98</w><h>28</h></coordinates><panel_attributes>AgreementMatcher
+style=autoresize
+bg=black
+layer=1</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLClass</id><coordinates><x>40</x><y>59</y><w>854</w><h>28</h></coordinates><panel_attributes>SpacyFilingTextSearch
+[USES THINGS BELOW]
+bg=yellow
+layer=-10</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLPackage</id><coordinates><x>68</x><y>269</y><w>441</w><h>518</h></coordinates><panel_attributes>Components 
+(in the SpaCy sense)
+--
+bg=green</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLClass</id><coordinates><x>103</x><y>416</y><w>70</w><h>28</h></coordinates><panel_attributes>SECUMatcher
+style=autoresize
+bg=black
+layer=1</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLClass</id><coordinates><x>348</x><y>332</y><w>98</w><h>28</h></coordinates><panel_attributes>SECUObjectMapper
+style=autoresize
+bg=black
+layer=1</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLClass</id><coordinates><x>103</x><y>465</y><w>98</w><h>28</h></coordinates><panel_attributes>SECUQuantityMatcher
+style=autoresize
+bg=black
+layer=1</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLClass</id><coordinates><x>103</x><y>591</y><w>84</w><h>28</h></coordinates><panel_attributes>SecurityActMatcher
+style=autoresize
+bg=black
+layer=1</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLClass</id><coordinates><x>264</x><y>556</y><w>126</w><h>28</h></coordinates><panel_attributes>FilingSecurityLawRetokenizer
+style=autoresize
+bg=black
+layer=1</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLClass</id><coordinates><x>103</x><y>542</y><w>126</w><h>28</h></coordinates><panel_attributes>CommonFinancialRetokenizer
+style=autoresize
+bg=black
+layer=1</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLClass</id><coordinates><x>103</x><y>318</y><w>70</w><h>28</h></coordinates><panel_attributes>CertaintySetter
+style=autoresize
+bg=black
+layer=1</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLClass</id><coordinates><x>103</x><y>353</y><w>70</w><h>28</h></coordinates><panel_attributes>NegationSetter
+style=autoresize
+bg=black
+layer=1</panel_attributes><additional_attributes></additional_attributes></element><element><id>Relation</id><coordinates><x>166</x><y>185</y><w>91</w><h>259</h></coordinates><panel_attributes>lt=&lt;&lt;.</panel_attributes><additional_attributes>10;350;50;350;50;10;110;10</additional_attributes></element><element><id>Relation</id><coordinates><x>194</x><y>185</y><w>63</w><h>308</h></coordinates><panel_attributes>lt=&lt;&lt;.</panel_attributes><additional_attributes>10;420;20;420;20;10;70;10</additional_attributes></element><element><id>Relation</id><coordinates><x>131</x><y>437</y><w>21</w><h>42</h></coordinates><panel_attributes>lt=&lt;&lt;.</panel_attributes><additional_attributes>10;10;10;40</additional_attributes></element><element><id>Relation</id><coordinates><x>222</x><y>549</y><w>56</w><h>35</h></coordinates><panel_attributes>lt=&lt;&lt;.</panel_attributes><additional_attributes>10;10;40;10;40;30;60;30</additional_attributes></element><element><id>Relation</id><coordinates><x>180</x><y>563</y><w>98</w><h>56</h></coordinates><panel_attributes>lt=&lt;&lt;.</panel_attributes><additional_attributes>10;60;100;60;100;10;120;10</additional_attributes></element><element><id>UMLClass</id><coordinates><x>257</x><y>668</y><w>126</w><h>35</h></coordinates><panel_attributes>ContractContextMatcher
+[not present at the moment]
+style=autoresize
+bg=black
+layer=1</panel_attributes><additional_attributes></additional_attributes></element><element><id>Relation</id><coordinates><x>194</x><y>675</y><w>77</w><h>21</h></coordinates><panel_attributes>lt=&lt;&lt;.</panel_attributes><additional_attributes>10;10;90;10</additional_attributes></element><element><id>UMLClass</id><coordinates><x>271</x><y>220</y><w>70</w><h>28</h></coordinates><panel_attributes>SECU Objects
+style=autoresize
+bg=black
+layer=1</panel_attributes><additional_attributes></additional_attributes></element><element><id>Relation</id><coordinates><x>299</x><y>241</y><w>63</w><h>119</h></coordinates><panel_attributes>lt=&lt;&lt;.</panel_attributes><additional_attributes>10;10;10;150;70;150</additional_attributes></element><element><id>UMLClass</id><coordinates><x>572</x><y>157</y><w>84</w><h>28</h></coordinates><panel_attributes>QuantityRelations
+style=autoresize
+bg=black
+layer=1</panel_attributes><additional_attributes></additional_attributes></element><element><id>Relation</id><coordinates><x>166</x><y>178</y><w>91</w><h>203</h></coordinates><panel_attributes>lt=&lt;&lt;.</panel_attributes><additional_attributes>10;270;40;270;40;10;110;10</additional_attributes></element><element><id>Relation</id><coordinates><x>166</x><y>178</y><w>91</w><h>168</h></coordinates><panel_attributes>lt=&lt;&lt;.</panel_attributes><additional_attributes>10;220;30;220;30;10;110;10</additional_attributes></element><element><id>UMLClass</id><coordinates><x>572</x><y>199</y><w>84</w><h>28</h></coordinates><panel_attributes>DatefulRelations
+style=autoresize
+bg=black
+layer=1</panel_attributes><additional_attributes></additional_attributes></element><element><id>Relation</id><coordinates><x>299</x><y>199</y><w>21</w><h>35</h></coordinates><panel_attributes>lt=&lt;&lt;.</panel_attributes><additional_attributes>10;10;10;30</additional_attributes></element><element><id>UMLClass</id><coordinates><x>222</x><y>136</y><w>168</w><h>28</h></coordinates><panel_attributes>SecurityDependencyAttributeMatcher
+style=autoresize
+bg=black
+layer=1</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLClass</id><coordinates><x>243</x><y>178</y><w>126</w><h>28</h></coordinates><panel_attributes>SecuObjectPropertyRelations
+style=autoresize
+bg=black
+layer=1</panel_attributes><additional_attributes></additional_attributes></element><element><id>Relation</id><coordinates><x>299</x><y>157</y><w>21</w><h>35</h></coordinates><panel_attributes>lt=&lt;&lt;.</panel_attributes><additional_attributes>10;10;10;30</additional_attributes></element><element><id>UMLClass</id><coordinates><x>670</x><y>416</y><w>70</w><h>28</h></coordinates><panel_attributes>AliasMatcher
+style=autoresize
+bg=black
+layer=1</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLClass</id><coordinates><x>775</x><y>416</y><w>56</w><h>28</h></coordinates><panel_attributes>AliasSetter
+style=autoresize
+bg=black
+layer=1</panel_attributes><additional_attributes></additional_attributes></element><element><id>Relation</id><coordinates><x>733</x><y>423</y><w>56</w><h>21</h></coordinates><panel_attributes>lt=&lt;&lt;.</panel_attributes><additional_attributes>10;10;60;10</additional_attributes></element><element><id>UMLClass</id><coordinates><x>726</x><y>353</y><w>56</w><h>28</h></coordinates><panel_attributes>AliasCache
+style=autoresize
+bg=black
+layer=1</panel_attributes><additional_attributes></additional_attributes></element><element><id>Relation</id><coordinates><x>747</x><y>374</y><w>70</w><h>56</h></coordinates><panel_attributes>lt=&lt;&lt;.</panel_attributes><additional_attributes>10;10;80;60</additional_attributes></element><element><id>Relation</id><coordinates><x>698</x><y>374</y><w>70</w><h>56</h></coordinates><panel_attributes>lt=&lt;&lt;.</panel_attributes><additional_attributes>80;10;10;60</additional_attributes></element><element><id>UMLGeneric</id><coordinates><x>649</x><y>332</y><w>217</w><h>140</h></coordinates><panel_attributes>Aliases
+halign=left
+layer=-1
+bg=orange</panel_attributes><additional_attributes></additional_attributes></element><element><id>Relation</id><coordinates><x>194</x><y>402</y><w>469</w><h>98</h></coordinates><panel_attributes>expands matches
+fontsize=16
+lt=&lt;&lt;.</panel_attributes><additional_attributes>10;120;560;120;560;10;650;10</additional_attributes></element><element><id>Relation</id><coordinates><x>166</x><y>388</y><w>497</w><h>63</h></coordinates><panel_attributes>expands matches
+fontsize=16
+lt=&lt;&lt;.</panel_attributes><additional_attributes>10;70;580;70;580;10;690;10</additional_attributes></element><element><id>UMLGeneric</id><coordinates><x>516</x><y>115</y><w>217</w><h>140</h></coordinates><panel_attributes>SECUObjectPropertyRelations
+halign=left
+layer=-1
+bg=black</panel_attributes><additional_attributes></additional_attributes></element><element><id>Relation</id><coordinates><x>362</x><y>171</y><w>168</w><h>35</h></coordinates><panel_attributes>lt=&lt;.
+&lt;&lt;instanceOf&gt;&gt;</panel_attributes><additional_attributes>220;10;180;10;180;30;10;30</additional_attributes></element><element><id>UMLClass</id><coordinates><x>586</x><y>535</y><w>238</w><h>217</h></coordinates><panel_attributes>OtherReferences
+[WHERE DOES THIS GO????]
+-
+Options:
+1) create a Controller for the AliasCache and 
+a separate ReferenceCache for any references besides Aliases
+2) integrate into the already existing alias cache and give them a different type
+3)?
+
+--&gt; 2) seems like the easiest solution, but causes coupling between an external library ... 
+Solutions to above problem:
+create a separate module, which extends the already present AliasCache on the Doc with the coreferee chains (still giving them a separate type, but making the use of coreferee optional), could be
+named something like CorefSetter.
+
+style=wordwrap
+bg=red
+layer=1</panel_attributes><additional_attributes></additional_attributes></element></diagram>

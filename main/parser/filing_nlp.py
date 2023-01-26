@@ -2,6 +2,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional, Set
 import spacy
+import coreferee
 from spacy.matcher import Matcher, DependencyMatcher
 from spacy.tokens import Span, Doc, Token
 from spacy import Language
@@ -774,8 +775,9 @@ def _add_SECUQUANTITY_ent_regular_case(matcher, doc: Doc, i, matches):
         if "[E1010]" in str(e):
             # logger.debug("handling overlapping ents")
             entity = handle_overlapping_ents(doc, start, end, entity)
-    _set_secuquantity_unit_on_span(match_tokens, entity)
-    doc._.secuquantity_spans.append(entity)
+    if entity:
+        _set_secuquantity_unit_on_span(match_tokens, entity)
+        doc._.secuquantity_spans.append(entity)
 
 
 def _set_secuquantity_unit_on_span(match_tokens: Span, span: Span):
@@ -887,8 +889,7 @@ def handle_overlapping_ents(
 
                 logger.debug(f"conflicting with entity: {conflicting_entity}")
                 raise e
-        else:
-            return entity
+        return entity
         # logger.debug(f"Added entity: {entity} with label: {entity.label_}")
 
 
@@ -1032,7 +1033,7 @@ class SpacyFilingTextSearch:
             cls._instance.nlp.add_pipe("certainty_setter")
             cls._instance.nlp.add_pipe("secu_object_mapper")
             cls._instance.nlp.add_pipe("agreement_matcher")
-            # cls._instance.nlp.add_pipe("coreferee")
+            cls._instance.nlp.add_pipe("coreferee")
         return cls._instance
     
 

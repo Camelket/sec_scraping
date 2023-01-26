@@ -1,54 +1,54 @@
-<diagram program="umletino" version="15.0.0"><zoom_level>10</zoom_level><element><id>UMLClass</id><coordinates><x>140</x><y>770</y><w>160</w><h>80</h></coordinates><panel_attributes>DilutionDB
+<diagram program="umletino" version="15.0.0"><zoom_level>5</zoom_level><element><id>UMLClass</id><coordinates><x>99</x><y>385</y><w>80</w><h>40</h></coordinates><panel_attributes>DilutionDB
 -
 Instantiates DB.
 Create, Read Operations
-(based on RAW SQL).</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLClass</id><coordinates><x>140</x><y>870</y><w>160</w><h>90</h></coordinates><panel_attributes>DilutionDBUpdater
+(based on RAW SQL).</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLClass</id><coordinates><x>99</x><y>435</y><w>80</w><h>45</h></coordinates><panel_attributes>DilutionDBUpdater
 -
 Utiltity for Updates of 
 DB Content
-and local Files</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLClass</id><coordinates><x>140</x><y>980</y><w>160</w><h>90</h></coordinates><panel_attributes>DilutionDBUtill
+and local Files</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLClass</id><coordinates><x>99</x><y>490</y><w>80</w><h>45</h></coordinates><panel_attributes>DilutionDBUtill
 -
 Helper functions for
 DilutionDB and 
-DilutionDBUpdater</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLUseCase</id><coordinates><x>230</x><y>570</y><w>110</w><h>40</h></coordinates><panel_attributes>Database
-bg=blue</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLUseCase</id><coordinates><x>490</x><y>780</y><w>110</w><h>40</h></coordinates><panel_attributes>LocalFiles
-bg=blue</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLGeneric</id><coordinates><x>720</x><y>570</y><w>180</w><h>40</h></coordinates><panel_attributes>orm_mapper.py
+DilutionDBUpdater</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLUseCase</id><coordinates><x>144</x><y>285</y><w>55</w><h>20</h></coordinates><panel_attributes>Database
+bg=blue</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLUseCase</id><coordinates><x>274</x><y>390</y><w>55</w><h>20</h></coordinates><panel_attributes>LocalFiles
+bg=blue</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLGeneric</id><coordinates><x>389</x><y>285</y><w>90</w><h>20</h></coordinates><panel_attributes>orm_mapper.py
 -&gt; exports start_mapper()
-</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLClass</id><coordinates><x>1020</x><y>780</y><w>190</w><h>40</h></coordinates><panel_attributes>dilution_db.py
-</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLClass</id><coordinates><x>1020</x><y>460</y><w>130</w><h>40</h></coordinates><panel_attributes>messagebus.py
+</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLClass</id><coordinates><x>539</x><y>390</y><w>95</w><h>20</h></coordinates><panel_attributes>dilution_db.py
+</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLClass</id><coordinates><x>539</x><y>230</y><w>65</w><h>20</h></coordinates><panel_attributes>messagebus.py
 -&gt; returns bus
-</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLClass</id><coordinates><x>1020</x><y>570</y><w>190</w><h>40</h></coordinates><panel_attributes>bootstrap.py
-</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLClass</id><coordinates><x>720</x><y>460</y><w>190</w><h>40</h></coordinates><panel_attributes>dilution_db_handlers.py
+</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLClass</id><coordinates><x>539</x><y>285</y><w>95</w><h>20</h></coordinates><panel_attributes>bootstrap.py
+</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLClass</id><coordinates><x>389</x><y>230</y><w>95</w><h>20</h></coordinates><panel_attributes>dilution_db_handlers.py
 -&gt; handlers for Commands
-</panel_attributes><additional_attributes></additional_attributes></element><element><id>Relation</id><coordinates><x>900</x><y>460</y><w>140</w><h>40</h></coordinates><panel_attributes>lt=&lt;&lt;-
-registered in</panel_attributes><additional_attributes>120;20;10;20</additional_attributes></element><element><id>Relation</id><coordinates><x>1100</x><y>490</y><w>30</w><h>100</h></coordinates><panel_attributes>lt=&lt;&lt;-</panel_attributes><additional_attributes>10;80;10;10</additional_attributes></element><element><id>Relation</id><coordinates><x>890</x><y>580</y><w>150</w><h>30</h></coordinates><panel_attributes>lt=&lt;&lt;-</panel_attributes><additional_attributes>130;10;10;10</additional_attributes></element><element><id>Relation</id><coordinates><x>1200</x><y>580</y><w>250</w><h>240</h></coordinates><panel_attributes>lt=&lt;&lt;-
-injects UoW, MessageBus</panel_attributes><additional_attributes>10;220;90;220;90;10;10;10</additional_attributes></element><element><id>UMLClass</id><coordinates><x>720</x><y>510</y><w>140</w><h>40</h></coordinates><panel_attributes>Commands.py
-</panel_attributes><additional_attributes></additional_attributes></element><element><id>Text</id><coordinates><x>1020</x><y>620</y><w>230</w><h>130</h></coordinates><panel_attributes>what needs to be injected into dilution_db?
+</panel_attributes><additional_attributes></additional_attributes></element><element><id>Relation</id><coordinates><x>479</x><y>230</y><w>70</w><h>20</h></coordinates><panel_attributes>lt=&lt;&lt;-
+registered in</panel_attributes><additional_attributes>120;20;10;20</additional_attributes></element><element><id>Relation</id><coordinates><x>579</x><y>245</y><w>15</w><h>50</h></coordinates><panel_attributes>lt=&lt;&lt;-</panel_attributes><additional_attributes>10;80;10;10</additional_attributes></element><element><id>Relation</id><coordinates><x>474</x><y>290</y><w>75</w><h>15</h></coordinates><panel_attributes>lt=&lt;&lt;-</panel_attributes><additional_attributes>130;10;10;10</additional_attributes></element><element><id>Relation</id><coordinates><x>629</x><y>290</y><w>125</w><h>120</h></coordinates><panel_attributes>lt=&lt;&lt;-
+injects UoW, MessageBus</panel_attributes><additional_attributes>10;220;90;220;90;10;10;10</additional_attributes></element><element><id>UMLClass</id><coordinates><x>389</x><y>255</y><w>70</w><h>20</h></coordinates><panel_attributes>Commands.py
+</panel_attributes><additional_attributes></additional_attributes></element><element><id>Text</id><coordinates><x>539</x><y>310</y><w>115</w><h>65</h></coordinates><panel_attributes>what needs to be injected into dilution_db?
 -
 1) messagebus
 2) a unitOfWork so we can pass it along
 3) 
-style=wordwrap</panel_attributes><additional_attributes></additional_attributes></element><element><id>Text</id><coordinates><x>1450</x><y>480</y><w>250</w><h>220</h></coordinates><panel_attributes>To do:
+style=wordwrap</panel_attributes><additional_attributes></additional_attributes></element><element><id>Text</id><coordinates><x>754</x><y>240</y><w>125</w><h>110</h></coordinates><panel_attributes>To do:
 -.
 *  remove reference to naiv_model.py
 *  rework form_values to conform  to domain model
 *  add  something so i can send events containing the domain model back to dilution_db
 *  finish extraction functions for s-3
-style=wordwrap</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLClass</id><coordinates><x>490</x><y>570</y><w>100</w><h>40</h></coordinates><panel_attributes>Repositiory
+style=wordwrap</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLClass</id><coordinates><x>274</x><y>285</y><w>50</w><h>20</h></coordinates><panel_attributes>Repositiory
 (Company)
 
-</panel_attributes><additional_attributes></additional_attributes></element><element><id>Relation</id><coordinates><x>330</x><y>570</y><w>180</w><h>40</h></coordinates><panel_attributes>lt=&lt;.&gt;
-&lt;&lt;get/add&gt;&gt;</panel_attributes><additional_attributes>10;20;160;20</additional_attributes></element><element><id>Relation</id><coordinates><x>530</x><y>380</y><w>510</w><h>210</h></coordinates><panel_attributes>lt=&lt;.&gt;
+</panel_attributes><additional_attributes></additional_attributes></element><element><id>Relation</id><coordinates><x>194</x><y>285</y><w>90</w><h>20</h></coordinates><panel_attributes>lt=&lt;.&gt;
+&lt;&lt;get/add&gt;&gt;</panel_attributes><additional_attributes>10;20;160;20</additional_attributes></element><element><id>Relation</id><coordinates><x>294</x><y>190</y><w>255</w><h>105</h></coordinates><panel_attributes>lt=&lt;.&gt;
 transaction context
-</panel_attributes><additional_attributes>10;190;10;20;490;20</additional_attributes></element><element><id>UMLClass</id><coordinates><x>1020</x><y>380</y><w>130</w><h>40</h></coordinates><panel_attributes>UnitOfWork
-</panel_attributes><additional_attributes></additional_attributes></element><element><id>Relation</id><coordinates><x>1140</x><y>390</y><w>40</w><h>200</h></coordinates><panel_attributes>lt=&lt;-
-</panel_attributes><additional_attributes>20;180;20;10;10;10</additional_attributes></element><element><id>Relation</id><coordinates><x>0</x><y>0</y><w>90</w><h>30</h></coordinates><panel_attributes>lt=&lt;&lt;-</panel_attributes><additional_attributes>70;10;10;10</additional_attributes></element><element><id>Relation</id><coordinates><x>850</x><y>490</y><w>250</w><h>70</h></coordinates><panel_attributes>lt=&lt;&lt;-
+</panel_attributes><additional_attributes>10;190;10;20;490;20</additional_attributes></element><element><id>UMLClass</id><coordinates><x>539</x><y>190</y><w>65</w><h>20</h></coordinates><panel_attributes>UnitOfWork
+</panel_attributes><additional_attributes></additional_attributes></element><element><id>Relation</id><coordinates><x>599</x><y>195</y><w>20</w><h>100</h></coordinates><panel_attributes>lt=&lt;-
+</panel_attributes><additional_attributes>20;180;20;10;10;10</additional_attributes></element><element><id>Relation</id><coordinates><x>29</x><y>0</y><w>45</w><h>15</h></coordinates><panel_attributes>lt=&lt;&lt;-</panel_attributes><additional_attributes>70;10;10;10</additional_attributes></element><element><id>Relation</id><coordinates><x>454</x><y>245</y><w>125</w><h>35</h></coordinates><panel_attributes>lt=&lt;&lt;-
 get handled by
-</panel_attributes><additional_attributes>230;10;180;40;10;40</additional_attributes></element><element><id>Relation</id><coordinates><x>530</x><y>600</y><w>60</w><h>200</h></coordinates><panel_attributes>lt=&lt;&lt;.
-reads</panel_attributes><additional_attributes>10;180;10;10</additional_attributes></element><element><id>Relation</id><coordinates><x>590</x><y>780</y><w>450</w><h>40</h></coordinates><panel_attributes>lt=&lt;&lt;.
-writes</panel_attributes><additional_attributes>10;20;430;20</additional_attributes></element><element><id>Relation</id><coordinates><x>580</x><y>580</y><w>460</w><h>240</h></coordinates><panel_attributes>lt=&lt;&lt;.
-adds new content</panel_attributes><additional_attributes>10;10;440;220</additional_attributes></element><element><id>UMLClass</id><coordinates><x>1020</x><y>860</y><w>120</w><h>40</h></coordinates><panel_attributes>Parser
-</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLClass</id><coordinates><x>1020</x><y>910</y><w>330</w><h>160</h></coordinates><panel_attributes>Extractor
+</panel_attributes><additional_attributes>230;10;180;40;10;40</additional_attributes></element><element><id>Relation</id><coordinates><x>294</x><y>300</y><w>30</w><h>100</h></coordinates><panel_attributes>lt=&lt;&lt;.
+reads</panel_attributes><additional_attributes>10;180;10;10</additional_attributes></element><element><id>Relation</id><coordinates><x>324</x><y>390</y><w>225</w><h>20</h></coordinates><panel_attributes>lt=&lt;&lt;.
+writes</panel_attributes><additional_attributes>10;20;430;20</additional_attributes></element><element><id>Relation</id><coordinates><x>319</x><y>290</y><w>230</w><h>120</h></coordinates><panel_attributes>lt=&lt;&lt;.
+adds new content</panel_attributes><additional_attributes>10;10;440;220</additional_attributes></element><element><id>UMLClass</id><coordinates><x>539</x><y>430</y><w>60</w><h>20</h></coordinates><panel_attributes>Parser
+</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLClass</id><coordinates><x>539</x><y>455</y><w>165</w><h>80</h></coordinates><panel_attributes>Extractor
 -
 keep to:
 	1) extractor functions only emit commands
@@ -57,7 +57,7 @@ keep to:
 		a) parsed filing
 		b) company object
 		c) messagebus
-</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLNote</id><coordinates><x>630</x><y>910</y><w>390</w><h>480</h></coordinates><panel_attributes>How to keep to SRP in extractor:
+</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLNote</id><coordinates><x>344</x><y>455</y><w>195</w><h>240</h></coordinates><panel_attributes>How to keep to SRP in extractor:
 -.
 capabilities needed:
 	1) up to date company repo/object
@@ -87,7 +87,7 @@ solutions ?:
 	of complete extraction -&gt; command.UpdateCompany()
 				
 
-bg=blue</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLNote</id><coordinates><x>1020</x><y>1070</y><w>330</w><h>320</h></coordinates><panel_attributes>Despite violating SRP in the 
+bg=blue</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLNote</id><coordinates><x>539</x><y>535</y><w>165</w><h>160</h></coordinates><panel_attributes>Despite violating SRP in the 
 extractor functions, isnt it the only 
 logical and straight forward way to do it?
 

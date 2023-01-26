@@ -196,10 +196,10 @@ class AliasCache:
                         result.append(ref)
         return result
 
-    def add_reference_to_alias(self, alias: Token|Span, reference: Token|Span):
+    def add_reference_to_alias(self, alias: Token|Span, reference: Token|Span, reference_designation: str="alias_reference"):
         alias_tuple = self._get_start_end_tuple(alias)
         reference_tuple = self._get_start_end_tuple(reference)
-        self._add_reference_to_alias(alias_tuple, reference_tuple)
+        self._add_reference_to_alias(alias_tuple, reference_tuple, reference_designation)
     
     def _add_parent(self, parent: tuple[int, int], child: tuple[int,int]):
         if parent not in self._parent_map[child]:
@@ -213,14 +213,14 @@ class AliasCache:
         self._add_child(parent, child)
         self._add_parent(parent, child)
     
-    def _add_reference_to_alias(self, alias_tuple: tuple[int, int], reference_tuple: tuple[int, int]):
+    def _add_reference_to_alias(self, alias_tuple: tuple[int, int], reference_tuple: tuple[int, int], reference_designation: str="alias_reference"):
         if (alias_tuple in self._already_assigned_aliases) or (alias_tuple in self._unassigned_aliases):
             self._reference_alias_set.add(reference_tuple)
             for x in range(reference_tuple[0], reference_tuple[1]+1):
                 self._idx_alias_map[x] = reference_tuple
             self._base_alias_references[alias_tuple].append(reference_tuple)
             self._add_child_parent_entry(alias_tuple, reference_tuple)
-            self._tuple_to_type_map[reference_tuple] = "reference"
+            self._tuple_to_type_map[reference_tuple] = reference_designation
         else:
             logger.warning(f"Add the base Alias({alias_tuple}) first, before registering references to the base Alias.")  
         
@@ -717,7 +717,6 @@ class AliasSetter:
             
 
     def assign_single_component_base_aliases_to_origins(self, doc: Doc, origins: list[Span]):
-        # TODO[epic="important"]: change this to try and match single compound base aliases only
         assignment_history = []
         assigned_origin_tuples = set()
         origins = self._eliminate_alias_references_from_origins(origins)
