@@ -41,7 +41,7 @@ from main.parser.filing_nlp_constants import (
     SECUQUANTITY_UNITS,
 )
 from main.parser.filing_nlp_SECU import SECU, SECUQuantity, UnitAmount, QuantityRelation, SourceQuantityRelation
-from main.parser.filing_nlp_alias_setter import AliasMatcher, AliasSetter
+from main.parser.filing_nlp_alias_setter import AliasMatcher, SimpleAliasSetter, create_multi_component_alias_setter, create_named_entity_default_alias_setter
 logger = logging.getLogger(__name__)
 formater = MatchFormater()
 
@@ -460,7 +460,7 @@ class SECUMatcher:
     def __init__(self, vocab):
         self.vocab = vocab
         self.alias_matcher = AliasMatcher()
-        self.alias_setter = AliasSetter(vocab)
+        self.alias_setter = SimpleAliasSetter()
         self.matcher_SECU = Matcher(vocab)
         self.matcher_SECUREF = Matcher(vocab)
         self.matcher_SECUATTR = Matcher(vocab)
@@ -947,7 +947,7 @@ class AgreementMatcher:
 
     def __init__(self, vocab):
         self.alias_matcher = AliasMatcher()
-        self.alias_setter = AliasSetter(vocab)
+        self.alias_setter = SimpleAliasSetter()
         self.vocab = vocab
         self.matcher = Matcher(vocab)
         self.add_CONTRACT_ent_to_matcher()
@@ -1033,6 +1033,8 @@ class SpacyFilingTextSearch:
             cls._instance.nlp.add_pipe("certainty_setter")
             cls._instance.nlp.add_pipe("secu_object_mapper")
             cls._instance.nlp.add_pipe("agreement_matcher")
+            cls._instance.nlp.add_pipe("multi_component_alias_setter")
+            cls._instance.nlp.add_pipe("named_entity_default_alias_setter", config={"overwrite_already_present_aliases": False, "ent_labels": ["ORG", "PER"]})
             cls._instance.nlp.add_pipe("coreferee")
         return cls._instance
     
