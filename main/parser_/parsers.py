@@ -15,7 +15,6 @@ import uuid
 from xml.etree import ElementTree
 
 from main.parser.filings_base import FilingSection, Filing, FilingSection
-from main.parser.extractors import extractor_factory
 from bs4 import BeautifulSoup
 import logging
 import re
@@ -499,20 +498,23 @@ class HTMFilingParser(AbstractFilingParser):
 
     def preprocess_text(self, text):
         """removes common unicode and folds multi spaces/newlines into one"""
-        text.replace("\xa04", "").replace("\xa0", " ").replace("\u200b", " ")
+        text = self.replace_common_unicode(text)
         # fold multiple empty newline rows into one
         text = re.sub(RE_COMPILED["two_newlines_or_more"], "\n", text)
         text = re.sub(RE_COMPILED["one_newline"], " ", text)
         # fold multiple spaces into one
         text = re.sub(RE_COMPILED["two_spaces_or_more"], " ", text)
         return text
+    
+    def replace_common_unicode(self, text: str) -> str:
+        return text.replace("\xa04", "").replace("\xa0", " ").replace("\u200b", " ")
 
     def preprocess_doc(self, doc: str):
         """preprocess the html string, by converting it to Beautifulsoup and back,
         thereby converting common html entities."""
         return str(BeautifulSoup(doc, features="html5lib"))
 
-    def clean_text_only_filing(self, filing: str):
+    def get_clean_text_from_raw_htm(self, filing: str|BeautifulSoup):
         """cleanes html filing and returns only text"""
         if isinstance(filing, BeautifulSoup):
             soup = filing
@@ -2306,7 +2308,7 @@ class Parser8K(HTMFilingParser):
         Returns:
             list[HTMFilingSection] or []
         """
-        clean_doc = self.clean_text_only_filing(doc)
+        clean_doc = self.get_clean_text_only_from_raw_htm(doc)
         items = self._parse_items(clean_doc)
         logger.debug(f"8-K items found: {len(items)}")
         if items == []:
@@ -2351,7 +2353,7 @@ class Parser8K(HTMFilingParser):
             else:
                 cik = None
             file = f.read()
-            filing = self.clean_text_only_filing(file)
+            filing = self.get_clean_text_only_from_raw_htm(file)
             try:
                 items = self._parse_items(filing)
             except AttributeError as e:

@@ -1608,7 +1608,7 @@ if __name__ == "__main__":
         quants = []
         for path in filing_paths:
             file_logger.warning(f"current file: {path}")
-            text = parser.clean_text_only_filing(parser.get_doc(path))
+            text = parser.get_clean_text_only_from_raw_htm(parser.get_doc(path))
             secu_objects = get_SECU_objects_from_text(text)
             for secu_key, values in secu_objects.items():
                 secu_keys.append(secu_key)
@@ -1646,7 +1646,7 @@ if __name__ == "__main__":
     def get_doc_from_path(path):
         search = SpacyFilingTextSearch()
         parser = HTMFilingParser()
-        text = parser.clean_text_only_filing(parser.get_doc(path))
+        text = parser.get_clean_text_only_from_raw_htm(parser.get_doc(path))
         return search.nlp(text)
     
  
