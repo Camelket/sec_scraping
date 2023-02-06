@@ -1,4 +1,4 @@
-from main.parser.filing_nlp_alias_setter import get_all_overlapping_intervals, get_longest_from_overlapping_groups, AliasCache, AliasMatcher
+from main.nlp.filing_nlp_alias_setter import get_all_overlapping_intervals, get_longest_from_overlapping_groups, AliasCache, AliasMatcher
 import pytest
 import spacy
 

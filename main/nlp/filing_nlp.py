@@ -12,7 +12,7 @@ import re
 import pandas as pd
 from pandas import Timestamp
 
-from main.parser.filing_nlp_utils import (
+from main.nlp.filing_nlp_utils import (
     MatchFormater,
     _set_extension,
     get_none_alias_ent_type_spans,
@@ -20,12 +20,14 @@ from main.parser.filing_nlp_utils import (
     filter_dep_matches,
     filter_matches,
 )
-from main.parser.filing_nlp_certainty_setter import create_certainty_setter
-from main.parser.filing_nlp_negation_setter import create_negation_setter
-from main.parser.filing_nlp_dependency_matcher import (
+from main.nlp.filing_nlp_certainty_setter import create_certainty_setter
+from main.nlp.filing_nlp_negation_setter import create_negation_setter
+from main.nlp.filing_nlp_coref_setter import create_coref_setter
+from main.nlp.filing_nlp_alias_setter import AliasMatcher, SimpleAliasSetter, create_multi_component_alias_setter, create_named_entity_default_alias_setter
+from main.nlp.filing_nlp_dependency_matcher import (
     SecurityDependencyAttributeMatcher,
 )
-from main.parser.filing_nlp_patterns import (
+from main.nlp.filing_nlp_patterns import (
     add_anchor_pattern_to_patterns,
     SECU_EXERCISE_PRICE_PATTERNS,
     SECU_EXPIRY_PATTERNS,
@@ -35,13 +37,12 @@ from main.parser.filing_nlp_patterns import (
     SECUQUANTITY_ENT_PATTERNS,
 
 )
-from main.parser.filing_nlp_constants import (
+from main.nlp.filing_nlp_constants import (
     PLURAL_SINGULAR_SECU_TAIL_MAP,
     SINGULAR_PLURAL_SECU_TAIL_MAP,
     SECUQUANTITY_UNITS,
 )
-from main.parser.filing_nlp_SECU import SECU, SECUQuantity, UnitAmount, QuantityRelation, SourceQuantityRelation
-from main.parser.filing_nlp_alias_setter import AliasMatcher, SimpleAliasSetter, create_multi_component_alias_setter, create_named_entity_default_alias_setter
+from main.nlp.filing_nlp_SECU import SECU, SECUQuantity, UnitAmount, QuantityRelation, SourceQuantityRelation
 logger = logging.getLogger(__name__)
 formater = MatchFormater()
 
@@ -1036,6 +1037,7 @@ class SpacyFilingTextSearch:
             cls._instance.nlp.add_pipe("multi_component_alias_setter")
             cls._instance.nlp.add_pipe("named_entity_default_alias_setter", config={"overwrite_already_present_aliases": False, "ent_labels": ["ORG", "PER"]})
             cls._instance.nlp.add_pipe("coreferee")
+            cls._instance.nlp.add_pipe("coref_setter")
         return cls._instance
     
 

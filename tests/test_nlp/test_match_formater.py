@@ -1,6 +1,6 @@
 
-from main.parser.filing_nlp import SpacyFilingTextSearch
-from main.parser.filing_nlp_utils import MatchFormater
+from main.nlp.filing_nlp import SpacyFilingTextSearch
+from main.nlp.filing_nlp_utils import MatchFormater
 from spacy.tokens import Token, Span
 import pytest
 from datetime import timedelta

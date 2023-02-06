@@ -1,4 +1,4 @@
-from main.parser.filing_nlp_constants import SECUQUANTITY_UNITS
+from main.nlp.filing_nlp_constants import SECUQUANTITY_UNITS
 
 def add_anchor_pattern_to_patterns(
     anchor_pattern: list[dict], patterns: list[list[dict]]

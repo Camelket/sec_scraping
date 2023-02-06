@@ -2,8 +2,8 @@ import pytest
 import spacy
 # from spacy.tokens import Span, Token, Doc
 # from spacy.matcher import Matcher
-from main.parser.filing_nlp import SpacyFilingTextSearch, create_secuquantity_matcher, create_secu_matcher
-from main.parser.filing_nlp_dependency_matcher import DependencyAttributeMatcher
+from main.nlp.filing_nlp import SpacyFilingTextSearch, create_secuquantity_matcher, create_secu_matcher
+from main.nlp.filing_nlp_dependency_matcher import DependencyAttributeMatcher
 from pandas import to_datetime
 import datetime
 
@@ -369,7 +369,7 @@ class TestSpacyFilingTextSearch:
         search = get_search
         text = "one or three or five are the magic numbers."
         doc = search.nlp(text)
-        from main.parser.filing_nlp import get_conflicting_ents
+        from main.nlp.filing_nlp import get_conflicting_ents
         print("ents in test doc: ", [ent for ent in doc.ents])
         conflicting = get_conflicting_ents(doc, 0, 1)
         assert conflicting == [doc.ents[0]]

@@ -1,5 +1,5 @@
-from main.parser.filing_nlp import SpacyFilingTextSearch
-from main.parser.filing_nlp_utils import WordToNumberConverter
+from main.nlp.filing_nlp import SpacyFilingTextSearch
+from main.nlp.filing_nlp_utils import WordToNumberConverter
 from datetime import timedelta
 
 

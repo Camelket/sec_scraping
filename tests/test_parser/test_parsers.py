@@ -1,8 +1,8 @@
 from pathlib import Path
 import os
 import pytest
-from main.parser.filings_base import Filing
-from main.parser.parsers import BaseFiling, filing_factory, HTMFilingParser, XMLFilingParser, ParserEFFECT
+from main.filings_base import Filing
+from main.parser.filing_parsers import BaseFiling, filing_factory, HTMFilingParser, XMLFilingParser, ParserEFFECT
 import datetime
 
 from xml.etree import ElementTree

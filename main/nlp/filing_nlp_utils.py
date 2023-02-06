@@ -93,7 +93,9 @@ def get_none_alias_ent_type_spans(doc: Doc, ent_type: str) -> list[Span]:
                     result.append(ent)
         return result
 
-def extend_token_ent_to_span(token: Token, doc: Doc) -> list[Token]:
+def extend_token_ent_to_span(token: Token, doc: Doc) -> Span|None:
+    if not token.ent_type_:
+        return None
     span_tokens = [token]
     logger.debug(
         f"extending ent span to surrounding for origin token: {token, token.i}"

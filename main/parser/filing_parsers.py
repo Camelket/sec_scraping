@@ -14,7 +14,7 @@ import copy
 import uuid
 from xml.etree import ElementTree
 
-from main.parser.filings_base import FilingSection, Filing, FilingSection
+from main.filings_base import FilingSection, Filing, FilingSection
 from bs4 import BeautifulSoup
 import logging
 import re

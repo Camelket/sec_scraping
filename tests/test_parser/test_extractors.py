@@ -1,11 +1,11 @@
-import main.parser.extractors as extractors
+import main.extractor.extractors as extractors
 import pytest
 import spacy
 import pandas as pd
 from pathlib import Path
 import datetime
 import re
-from main.parser.parsers import filing_factory
+from main.parser.filing_parsers import filing_factory
 from main.domain import model, commands
 from main.services import unit_of_work, messagebus
 

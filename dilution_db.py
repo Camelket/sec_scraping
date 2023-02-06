@@ -25,10 +25,10 @@ from sqlalchemy import inspect
 from pysec_downloader.downloader import Downloader
 from main.data_aggregation.polygon_basic import PolygonClient
 from main.data_aggregation.fact_extractor import get_cash_and_equivalents, get_outstanding_shares, get_cash_financing, get_cash_investing, get_cash_operating
-from main.parser.filings_base import Filing
-import main.parser.extractors as extractors
-import main.parser.parsers as parsers
-from main.configs import cnf, GlobalConfig
+from main.filings_base import Filing
+import main.extractor.extractors as extractors
+import main.parser.filing_parsers as parsers
+from main.configs import GlobalConfig
 from _constants import FORM_TYPES_INFO, EDGAR_BASE_ARCHIVE_URL
 from main.services.messagebus import MessageBus
 from main.domain import commands, model
@@ -89,10 +89,7 @@ quick overview of the main classes involved in the parsing pipeline:
 
 '''
 
-if cnf.ENV_STATE != "prod":
-    logger.setLevel(logging.DEBUG)
-else:
-    logger.setLevel(logging.INFO)
+
 
 
 class DilutionDB:
@@ -100,6 +97,7 @@ class DilutionDB:
         self.uow = uow
         self.bus = message_bus
         self.config = config
+        self._set_logging_level()
         self.pool = ConnectionPool(
             config.DILUTION_DB_CONNECTION_STRING, kwargs={"row_factory": dict_row}
         )
@@ -108,6 +106,13 @@ class DilutionDB:
         self.tracked_forms = self._get_tracked_forms_from_config() if tracked_forms is None else tracked_forms
         self.util = DilutionDBUtil(self)
         self.updater = DilutionDBUpdater(self)
+    
+    def _set_logging_level(self):
+        if self.config.ENV_STATE != "prod":
+            logger.setLevel(logging.DEBUG)
+        else:
+            logger.setLevel(logging.INFO)
+
     
     def _is_security_present(self, symbol: str, security_name: str):
         '''return bool if a security with given security_name is present for company with given symbol.'''
@@ -178,15 +183,15 @@ class DilutionDB:
             self.util.inital_table_setup()
         self.updater.update_bulk_files()
         self.util.inital_company_setup(
-            cnf.DOWNLOADER_ROOT_PATH,
-            cnf.POLYGON_OVERVIEW_FILES_PATH,
-            cnf.POLYGON_API_KEY,
-            cnf.APP_CONFIG.TRACKED_FORMS,
-            cnf.APP_CONFIG.TRACKED_TICKERS,
+            self.config.DOWNLOADER_ROOT_PATH,
+            self.config.POLYGON_OVERVIEW_FILES_PATH,
+            self.config.POLYGON_API_KEY,
+            self.config.APP_CONFIG.TRACKED_FORMS,
+            self.config.APP_CONFIG.TRACKED_TICKERS,
             after=after,
             before=before
         )
-        for ticker in cnf.APP_CONFIG.TRACKED_TICKERS:
+        for ticker in self.config.APP_CONFIG.TRACKED_TICKERS:
             self.updater.update_ticker(ticker)
     
     def read_all_companies(self):
@@ -906,13 +911,13 @@ class DilutionDBUpdater:
     def update_bulk_files(self):
         '''update submissions and companyfacts bulk files'''
         with self.db.conn() as conn:
-            if self._file_needs_update_lud_filesystem(Path(cnf.DOWNLOADER_ROOT_PATH) / "submissions", max_age=288):
+            if self._file_needs_update_lud_filesystem(Path(self.db.config.DOWNLOADER_ROOT_PATH) / "submissions", max_age=288):
             # if self._file_needs_update_lud_database("submissions_zip_lud", max_age=24):
                 logger.debug("updating submissions.zip...")
                 self.dl.get_bulk_submissions()
                 self.db._update_files_lud(conn, "submissions_zip_lud", datetime.utcnow())
                 logger.info("successfully updated submissions.zip")
-            if self._file_needs_update_lud_filesystem(Path(cnf.DOWNLOADER_ROOT_PATH) / "companyfacts", max_age=288):
+            if self._file_needs_update_lud_filesystem(Path(self.db.config.DOWNLOADER_ROOT_PATH) / "companyfacts", max_age=288):
             # if self._file_needs_update_lud_database("companyfacts_zip_lud", max_age=24):
                 logger.debug("updating companyfacts.zip...")
                 self.dl.get_bulk_companyfacts()
@@ -1489,26 +1494,3 @@ def _ensure_no_dash_accn(accn: str):
     #                     raise e
 
 
-if __name__ == "__main__":
-
-    db = DilutionDB(cnf.DILUTION_DB_CONNECTION_STRING)
-    # with open("./resources/company_tickers.json", "r") as f:
-    #     tickers = list(load(f).keys())
-    #     db.util._get_overview_files(cnf.DOWNLOADER_ROOT_PATH, cnf.POLYGON_OVERVIEW_FILES_PATH, cnf.POLYGON_API_KEY, tickers)
-    
-    # fake_args1 = [1, 0, 0, 0, 0, "2010-04-01", "2011-02-27"]
-    # fake_args2 = [1, 0, 0, 0, 0, "2010-04-01", "2011-04-27"]
-    # db.init_cash_burn_summary(1)
-    # print(db.read("SELECT * FROM cash_burn_summary", []))
-    # db.init_cash_burn_rate(1)
-    
-
-    # db.create_cash_burn_rate(*fake_args2)
-    # with db.conn() as c:
-    #     res = c.execute("SELECT * FROM companies JOIN sics ON companies.sic = sics.sic")
-    #     for r in res:
-    #         print(r)
-    # db._delete_all_tables()
-    # db._create_tables()
-    # db.create_sics()
-    # db.create_tracked_companies()

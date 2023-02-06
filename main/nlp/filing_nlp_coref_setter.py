@@ -3,8 +3,8 @@ from spacy.language import Language
 import coreferee
 from spacy.tokens import Token, Span, Doc
 import logging
-from main.parser.filing_nlp_errors import ExtensionRequiredError, ComponentDependencyError
-from main.parser.filing_nlp_utils import extend_token_ent_to_span, create_single_token_span
+from main.nlp.filing_nlp_errors import ExtensionRequiredError, ComponentDependencyError
+from main.nlp.filing_nlp_utils import extend_token_ent_to_span, create_single_token_span
 logger = logging.getLogger(__name__)
 
 @Language.factory("coref_setter")
@@ -67,7 +67,7 @@ class CorefSetter:
                                         doc._.alias_cache.add_tuple_reference_to_tuple_base_alias(
                                             alias_tuple=base_alias_tuple,
                                             reference_tuple=ref_tuple,
-                                            reference_designation="corefree_alias")
+                                            reference_designation="coreferee_alias")
                                     else:
                                         raise ValueError(f"encountered ref_tuple being None for mention: {mention}")
                         # print(f"token_indexes of mentions: {[m.token_indexes for m in chain.mentions]} with already present ref: {doc._.alias_cache._idx_alias_map[root_tuple[0]]}")

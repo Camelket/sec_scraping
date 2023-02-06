@@ -6,18 +6,18 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-from main.parser.filing_nlp_constants import (
+from main.nlp.filing_nlp_constants import (
     ATTRIBUTE_KEY_TO_STRINGKEY,
     DEPENDENCY_ATTRIBUTE_MATCHER_IS_OPTIONAL_FLAG,
     SECUQUANTITY_UNITS,
 )
-from main.parser.filing_nlp_utils import (
+from main.nlp.filing_nlp_utils import (
     extend_token_ent_to_span,
     get_dep_distance_between,
     MatchFormater,
 )
-from main.parser.filing_nlp_dateful_relations import DatetimeRelation
-from main.parser.filing_nlp_patterns import (
+from main.nlp.filing_nlp_dateful_relations import DatetimeRelation
+from main.nlp.filing_nlp_patterns import (
     AT_CONTEXT_UNIT_TAIL_PATTERNS,
     add_anchor_pattern_to_patterns,
     SECU_DATE_RELATION_PATTERNS_FROM_ROOT_VERB,

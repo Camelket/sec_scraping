@@ -1,7 +1,7 @@
 from spacy.tokens import Token, Doc
 from spacy.matcher import Matcher
 from spacy import Language
-from main.parser.filing_nlp_patterns import VERB_NEGATION_PATTERNS, ADJ_NEGATION_PATTERNS
+from main.nlp.filing_nlp_patterns import VERB_NEGATION_PATTERNS, ADJ_NEGATION_PATTERNS
 
 
 class NegationSetter:

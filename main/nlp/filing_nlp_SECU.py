@@ -1,12 +1,12 @@
 from dataclasses import dataclass
 from typing import Any
 from spacy.tokens import Span, Token
-from main.parser.filing_nlp_dependency_matcher import (
+from main.nlp.filing_nlp_dependency_matcher import (
     SourceContext,
     SecurityDependencyAttributeMatcher,    
 )
-from main.parser.filing_nlp_dateful_relations import DatetimeRelation
-from main.parser.filing_nlp_patterns import (
+from main.nlp.filing_nlp_dateful_relations import DatetimeRelation
+from main.nlp.filing_nlp_patterns import (
     SECU_GET_EXERCISE_DATE_LEMMA_COMBINATIONS,
     SECU_GET_EXPIRY_DATE_LEMMA_COMBINATIONS, 
 )

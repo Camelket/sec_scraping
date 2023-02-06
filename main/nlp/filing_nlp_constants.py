@@ -18,4 +18,17 @@ ATTRIBUTE_KEY_TO_STRINGKEY = {
     }
 
 DEPENDENCY_ATTRIBUTE_MATCHER_IS_OPTIONAL_FLAG = "was_optional"
+
+COMMON_CONTRACT_SUBJECTS = set(
+    [
+        "investor",
+        "investors",
+        "accredited investor",
+        "accredited investors",
+        "placement agent",
+        "placement agents",
+    ]
+)
+
+
     

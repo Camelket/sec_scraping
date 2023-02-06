@@ -13,13 +13,12 @@ from spacy.tokens import Doc, Span, Token
 import json
 from collections import defaultdict
 
-from main.parser.filings_base import Filing, FilingSection
+from main.filings_base import Filing, FilingSection
 from main.domain import model, commands
 from main.domain.model import CommonShare, DebtSecurity, PreferredShare, Security, SecurityType, SecurityTypeFactory, Warrant, Option
 from main.services.messagebus import Message, MessageBus
-from .filing_nlp import SpacyFilingTextSearch, MatchFormater, get_secu_key, UnclearInformationExtraction
-
-from .filing_nlp_SECU import SECU
+from main.nlp.filing_nlp import SpacyFilingTextSearch, MatchFormater, get_secu_key, UnclearInformationExtraction
+from main.nlp.filing_nlp_SECU import SECU
 
 logger = logging.getLogger(__name__)
 security_type_factory = SecurityTypeFactory()

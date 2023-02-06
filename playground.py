@@ -7,7 +7,7 @@ from numpy import number
 from urllib3 import connection_from_url
 from dilution_db import DilutionDBUpdater
 from main.adapters.repository import SqlAlchemyCompanyRepository
-from main.parser.extractors import UnhandledClassificationError
+from main.extractor.extractors import UnhandledClassificationError
 # from dilution_db import DilutionDB
 # from main.data_aggregation.polygon_basic import PolygonClient
 # from main.configs import cnf
@@ -15,7 +15,7 @@ from main.parser.extractors import UnhandledClassificationError
 # from main.data_aggregation.bulk_files import update_bulk_files
 
 
-from main.parser.parsers import HTMFilingParser, Parser8K, ParserSC13D, BaseHTMFiling
+from main.parser.filing_parsers import HTMFilingParser, Parser8K, ParserSC13D, BaseHTMFiling
 from pathlib import Path
 
 from psycopg import Connection
@@ -192,7 +192,7 @@ if __name__ == "__main__":
     import spacy
     import datetime
     from spacy import displacy
-    import main.parser.extractors as extractors
+    import main.extractor.extractors as extractors
 
     # nlp = spacy.load("en_core_web_sm")
 
@@ -412,7 +412,7 @@ if __name__ == "__main__":
     
     
     def test_spacy():
-        from main.parser.filing_nlp import SpacyFilingTextSearch
+        from main.nlp.filing_nlp import SpacyFilingTextSearch
         spacy_text_search = SpacyFilingTextSearch()
         # import spacy
         # from spacy.matcher import Matcher
@@ -447,7 +447,7 @@ if __name__ == "__main__":
             "form_type": "S-3",
             "extension": ".htm"
         }
-        from main.parser.parsers import filing_factory
+        from main.parser.filing_parsers import filing_factory
         filing = filing_factory.create_filing(**fake_filing_info)
         return filing
     
@@ -462,7 +462,7 @@ if __name__ == "__main__":
             "form_type": form_type,
             "extension": extension
         }
-        from main.parser.parsers import filing_factory
+        from main.parser.filing_parsers import filing_factory
         filing = filing_factory.create_filing(**fake_filing_info)
         return filing
     # 
@@ -477,7 +477,7 @@ if __name__ == "__main__":
     # test_s3_splitting_by_toc_hrefs()
 
     def test_spacy_secu_matches():
-        from main.parser.filing_nlp import SpacyFilingTextSearch
+        from main.nlp.filing_nlp import SpacyFilingTextSearch
         spacy_text_search = SpacyFilingTextSearch()
         # text = "1,690,695 shares of common stock issuable upon exercise of stock options outstanding as of September 30, 2020 at a weighted-average exercise price of $12.86 per share."
         # doc = spacy_text_search.nlp(text)
@@ -496,7 +496,7 @@ if __name__ == "__main__":
     # test_spacy_secu_matches()
 
     def get_secu_list():
-        from main.parser.filing_nlp import SpacyFilingTextSearch
+        from main.nlp.filing_nlp import SpacyFilingTextSearch
         spacy_text_search = SpacyFilingTextSearch()
         root = r"F:\example_filing_set_100_companies"
         paths = [f for f in (Path(root) /"filings").rglob("*.htm")]
@@ -518,8 +518,8 @@ if __name__ == "__main__":
         pd.DataFrame(secus_list).to_clipboard()
     # get_secu_list()
     def get_relates_to_list():
-        from main.parser.filing_nlp import SpacyFilingTextSearch
-        from main.parser.parsers import ParserS3
+        from main.nlp.filing_nlp import SpacyFilingTextSearch
+        from main.parser.filing_parsers import ParserS3
         spacy_text_search = SpacyFilingTextSearch()
         root_d = Path(r"F:\example_filing_set_S3")
         root = root_d / "filings"
@@ -569,7 +569,7 @@ if __name__ == "__main__":
             "extension": ".htm"
         }
         
-        from main.parser.parsers import filing_factory
+        from main.parser.filing_parsers import filing_factory
         filing: BaseHTMFiling = filing_factory.create_filing(**fake_filing_info)
         # b = filing.get_section("before items")
         # print([t["parsed_table"] for t in b.tables])
@@ -578,7 +578,7 @@ if __name__ == "__main__":
 
     def test_sc13d_main_table():
         filings = get_all_filings_path(r"F:\example_filing_set_sc13\filings", "SC 13D")
-        from main.parser.parsers import filing_factory
+        from main.parser.filing_parsers import filing_factory
         for path in filings:
             path1 = Path(path)
             info = {
@@ -597,7 +597,7 @@ if __name__ == "__main__":
 
     def test_sc13g_main_table():
         filings = get_all_filings_path(r"F:\example_filing_set_sc13\filings", "SC 13G")
-        from main.parser.parsers import filing_factory
+        from main.parser.filing_parsers import filing_factory
         for path in filings:
             path1 = Path(path)
             info = {
@@ -617,7 +617,7 @@ if __name__ == "__main__":
         filing_creation_failed = []
         other_exceptions = []
         # front_pages = []
-        from main.parser.extractors import HTMS3Extractor
+        from main.extractor.extractors import HTMS3Extractor
         extractor = HTMS3Extractor()
         paths = get_all_filings_path(root_path, "S-3")
         resale_paths = []
@@ -661,7 +661,7 @@ if __name__ == "__main__":
         filing_creation_failed = []
         other_exceptions = []
         # front_pages = []
-        from main.parser.extractors import HTMS3Extractor
+        from main.extractor.extractors import HTMS3Extractor
         extractor = HTMS3Extractor()
         paths = get_all_filings_path(root_path, "S-3")
         ATM_paths = []
@@ -777,8 +777,8 @@ if __name__ == "__main__":
 
     # download_samples(r"C:\Users\Olivi\Desktop\test_set\set2_s3", forms=["S-3"], num_tickers=300, max_filings=30)
 
-    from main.parser.filing_nlp import SpacyFilingTextSearch
-    from main.parser.extractors import BaseHTMExtractor
+    from main.nlp.filing_nlp import SpacyFilingTextSearch
+    from main.extractor.extractors import BaseHTMExtractor
     search = SpacyFilingTextSearch()
     # filing = _create_filing("S-3", r"C:\Users\Olivi\Desktop\test_set\set_s3/filings/0001175680/S-3/000119312520128998/d921147ds3a.htm")
     # # text = 'The selling shareholders named in this prospectus may use this prospectus to offer and resell from time to time up to 22,093,822 shares of our common stock, par value $0.0001 per share, which are comprised of (i) 6,772,000 shares (the “Shares”) of our common stock issued in a private placement on November 22, 2021 (the “Private Placement”), pursuant to that certain Securities Purchase Agreement by and among us and certain investors (the “Purchasers”), dated as of November 17, 2021 (the “Securities Purchase Agreement”), (ii) 4,058,305 shares (the “Pre-funded Warrant Shares”) of our common stock issuable upon the exercise of the pre-funded warrants (the “Pre-funded Warrants”) issued in the Private Placement pursuant to the Securities Purchase Agreement, (iii) 10,830,305 shares (the “Common Stock Warrant Shares” and together with the Pre-funded Warrant Shares, the “Warrant Shares”) of our common stock issuable upon the exercise of the warrants (the “Common Stock Warrants” and together with the Pre-funded Warrants, the “Warrants”) issued in the Private Placement pursuant to the Securities Purchase Agreement we issued to such investor and (iv) 433,212 shares (the “Placement Agent Warrant Shares”) of our common stock issuable upon the exercise of the placement agent warrants (the “Placement Agent Warrants”) issued in connection with the Private Placement.'
@@ -822,7 +822,7 @@ if __name__ == "__main__":
         return docs
     
     # test_filing = _create_filing("S-3", r"F:/example_filing_set_S3/filings/0000002178/S-3/000000217820000138/a2020forms-3.htm")
-    from main.parser.extractors import HTMS3Extractor
+    from main.extractor.extractors import HTMS3Extractor
     extractor = HTMS3Extractor()
     # for filing in test_filing:
     #     print(extractor.classify_s3(filing))
@@ -1283,7 +1283,7 @@ if __name__ == "__main__":
         search = SpacyFilingTextSearch()
         doc = search.nlp(text)
         from collections import defaultdict
-        from main.parser.filing_nlp import get_premerge_tokens_for_span
+        from main.nlp.filing_nlp import get_premerge_tokens_for_span
         possible_aliases = defaultdict(list)
         for secu in doc._.secus:
             secu_first_token = secu[0]
@@ -1397,8 +1397,8 @@ if __name__ == "__main__":
     # displacy_ent_with_search(text)
 
     def try_get_SECU_objects():
-        from main.parser.parsers import filing_factory
-        from main.parser.filing_nlp import SpacyFilingTextSearch
+        from main.parser.filing_parsers import filing_factory
+        from main.nlp.filing_nlp import SpacyFilingTextSearch
         search = SpacyFilingTextSearch()
         path = r"C:\Users\Olivi\Testing\sec_scraping\tests\test_resources\filings\0001035976\S-3\000143774918017591\fncb20180927_s3.htm"
         filing_info = {
@@ -1442,7 +1442,7 @@ if __name__ == "__main__":
         secus = []
         docs = []
         eps = []
-        from main.parser.parsers import filing_factory
+        from main.parser.filing_parsers import filing_factory
         path = r"C:\Users\Olivi\Testing\sec_scraping\tests\test_resources\filings\0001035976\S-3\000143774918017591\fncb20180927_s3.htm"
         filing_info = {
         "path": path,
@@ -1562,7 +1562,7 @@ if __name__ == "__main__":
 # TODO: to test new SECU object, invoke an htmlfilingparser, spacyfilingtextsearch
     
     def match_context_sconj_action(doc):
-        from main.parser.filing_nlp import SecurityDependencyAttributeMatcher
+        from main.nlp.filing_nlp import SecurityDependencyAttributeMatcher
         attr_matcher = SecurityDependencyAttributeMatcher()
         results = []
         for ent in doc.ents:
@@ -1706,7 +1706,7 @@ if __name__ == "__main__":
     # displacy_dep_with_search("We entered into an Agreement with Cerosa Inc. on May 5, 2021, pursuant to which we issued 5000 shares of common stock.")
     def try_alias_cache():
         alias_test_text = "On February 22, 2021, we entered into the Securities Purchase Agreement (the “Securities Purchase Agreement”), pursuant to which we agreed to issue the investor named therein (the “Investor”) 8,888,890 shares (the “Shares”) of our common stock, par value $0.000001 per share, at a purchase price of $2.25 per share, and a warrant to purchase up to 6,666,668 shares of our common stock (the “Investor Warrant”) in a private placement (the “Private Placement”). The closing of the Private Placement occurred on February 24, 2021. Pursuant to the Securities Purchase Agreement we also issued 10000 shares of our common stock through the Investor Warrant."
-        from main.parser.filing_nlp_alias_setter import AliasMatcher, AliasSetter
+        from main.nlp.filing_nlp_alias_setter import AliasMatcher, AliasSetter
         import spacy
         # nlp = spacy.load("en_core_web_lg")
         # doc = nlp(alias_test_text)
@@ -1768,9 +1768,9 @@ if __name__ == "__main__":
     # need to check the quantity relations for existance of: daterelation, amount, amods of parent secu and quant 
     # displacy_dep_with_search("The common stock outstanding after the offering is based on 113,299,612 shares of our common stock outstanding as of December 31, 2019 and the sale of 36,057,692 shares of our common stock at an assumed offering price of $2.08 per share, the last reported sale price of our common stock on the NASDAQ on March 16, 2020 and excludes the following")
 
-    from main.parser.filing_nlp_alias_setter import AliasMatcher, AliasSetter
-    from main.parser.filing_nlp import SECUMatcher, create_secu_matcher, create_secuquantity_matcher
-    from main.parser.filing_nlp_utils import create_single_token_span
+    from main.nlp.filing_nlp_alias_setter import AliasMatcher, AliasSetter
+    from main.nlp.filing_nlp import SECUMatcher, create_secu_matcher, create_secuquantity_matcher
+    from main.nlp.filing_nlp_utils import create_single_token_span
     import spacy
 
     nlp = spacy.load("en_core_web_lg")

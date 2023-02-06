@@ -1,4 +1,4 @@
-from main.parser.filing_nlp_certainty_setter import create_certainty_setter, CERTAINTY_LEVEL_MAP_ADV, CERTAINTY_LEVEL_MAP_MD
+from main.nlp.filing_nlp_certainty_setter import create_certainty_setter, CERTAINTY_LEVEL_MAP_ADV, CERTAINTY_LEVEL_MAP_MD
 import spacy
 from spacy.tokens import Span, Token, Doc
 
