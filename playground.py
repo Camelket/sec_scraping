@@ -1562,8 +1562,8 @@ if __name__ == "__main__":
 # TODO: to test new SECU object, invoke an htmlfilingparser, spacyfilingtextsearch
     
     def match_context_sconj_action(doc):
-        from main.nlp.filing_nlp import SecurityDependencyAttributeMatcher
-        attr_matcher = SecurityDependencyAttributeMatcher()
+        from main.nlp.filing_nlp import AttributeMatcher
+        attr_matcher = AttributeMatcher()
         results = []
         for ent in doc.ents:
             if ent.label_ == "SECUQUANTITY":
@@ -1748,6 +1748,29 @@ if __name__ == "__main__":
             uow=uow)
         return db
     
+    @profile
+    def profile_search_nlp():
+        from main.parser.filing_parsers import HTMFilingParser
+        from pathlib import Path
+        from scalene import scalene_profiler
+        parser = HTMFilingParser()
+        file_paths = [i for i in Path(r"C:\Users\Olivi\Desktop\test_set\filings\0001309082\S-3").rglob("*.htm")]
+        text_only = []
+        for p in file_paths:
+            text = parser.replace_common_unicode(
+                parser.get_text_content(
+                    parser.make_soup(
+                        parser.get_doc(p)
+                    ), exclude=["title", "script"]
+                )
+            )
+            text_only.append(text)
+        from main.nlp.filing_nlp import SpacyFilingTextSearch
+        search = SpacyFilingTextSearch()
+        text_only_docs = []
+        for t in text_only[1:2]:
+            search.nlp(t)
+    profile_search_nlp()
     # db = get_dilution_db_connected_to_test()
 
     # from main.domain import commands, model
@@ -1768,21 +1791,4 @@ if __name__ == "__main__":
     # need to check the quantity relations for existance of: daterelation, amount, amods of parent secu and quant 
     # displacy_dep_with_search("The common stock outstanding after the offering is based on 113,299,612 shares of our common stock outstanding as of December 31, 2019 and the sale of 36,057,692 shares of our common stock at an assumed offering price of $2.08 per share, the last reported sale price of our common stock on the NASDAQ on March 16, 2020 and excludes the following")
 
-    from main.nlp.filing_nlp_alias_setter import AliasMatcher, AliasSetter
-    from main.nlp.filing_nlp import SECUMatcher, create_secu_matcher, create_secuquantity_matcher
-    from main.nlp.filing_nlp_utils import create_single_token_span
-    import spacy
-
-    nlp = spacy.load("en_core_web_lg")
-    nlp.add_pipe("secu_matcher")
-    nlp.add_pipe("secuquantity_matcher")
-    alias_matcher = AliasMatcher()
-    alias_setter = AliasSetter(nlp.vocab)
-    test_text =  "On March 8, 2021, Hoth Therapeutics, Inc. (the “Company”) entered into a securities purchase agreement (the “Purchase Agreement”) with certain institutional and accredited investors (the “Investors”) pursuant to which it agreed to sell an aggregate of (i) 6,826,962 shares (the “Shares”) of common stock, par value $0.0001 per share (the “Common Stock”), (ii) warrants (the “Pre-Funded Warrants”) to purchase up to 767,975 shares (the “Pre-funded Warrant Shares”) of Common Stock and (iii) warrants (the “Common Stock Warrants” and together with the Pre-Funded Warrants, the “Warrants”) to purchase up to 7,594,937 shares (the “Warrant Shares” and together with the Shares and the Pre-Funded Warrant Shares, the “Registrable Securities”) of Common Stock at a purchase price of $1.975 per share and accompanying warrant in a private placement for aggregate gross proceeds of approximately $15 million, exclusive of placement agent commission and fees and other offering expenses (the “Offering”). The closing of the Offering is expected to occur on March 10, 2021, subject to the satisfaction of customary closing conditions."
-
-
-    doc = nlp(test_text)
-    doc = alias_matcher(doc)
-    doc = alias_setter(doc, doc._.secus)
-    doc = alias_setter(doc, [doc[i.start:i.end+1] for i in doc._.secuquantity_spans])
-    # print(doc._._extensions)
+    # displacy_dep_with_search("Pursuant to the Securities Purchase Agreement CONTRACT (the “ Purchase Agreement CONTRACT ”), pursuant to which certain investors purchased an aggregate of 2,510,506 units")

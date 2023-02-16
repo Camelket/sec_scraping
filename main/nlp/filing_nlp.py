@@ -26,6 +26,7 @@ from main.nlp.filing_nlp_coref_setter import create_coref_setter
 from main.nlp.filing_nlp_alias_setter import AliasMatcher, SimpleAliasSetter, create_multi_component_alias_setter, create_named_entity_default_alias_setter
 from main.nlp.filing_nlp_dependency_matcher import (
     SecurityDependencyAttributeMatcher,
+    ContractDependencyAttributeMatcher,
 )
 from main.nlp.filing_nlp_patterns import (
     add_anchor_pattern_to_patterns,
@@ -42,7 +43,7 @@ from main.nlp.filing_nlp_constants import (
     SINGULAR_PLURAL_SECU_TAIL_MAP,
     SECUQUANTITY_UNITS,
 )
-from main.nlp.filing_nlp_SECU import SECU, SECUQuantity, UnitAmount, QuantityRelation, SourceQuantityRelation
+from main.nlp.filing_nlp_SECU_object import SECU, SECUQuantity, UnitAmount, QuantityRelation, SourceQuantityRelation
 logger = logging.getLogger(__name__)
 formater = MatchFormater()
 
@@ -78,6 +79,35 @@ class CommonFinancialRetokenizer:
                 span = span[0]
                 if span is not None:
                     retokenizer.merge(span, attrs={"POS": "NOUN", "TAG": "NN"})
+        return doc
+
+
+class ListicalRetokenizer:
+    '''
+    SideEffect:
+        indices shift, so place component at the beginning of the pipeline.
+    '''
+    def __init__(self, vocab):
+        pass
+
+    def __call__(self, doc):
+        expressions = [
+            re.compile(r"(\(.{1,4}\))", re.I),
+        ]
+        match_spans = []
+        for expression in expressions:
+            matches = re.findall(expression, doc.text)
+            if len(matches) > 1:
+                for match in re.finditer(expression, doc.text):
+                    start, end = match.span()
+                    span = doc.char_span(start, end)
+                    if match is not None:
+                        match_spans.append([span, start, end])
+        with doc.retokenize() as retokenizer:
+            for span in match_spans:
+                span = span[0]
+                if span is not None:
+                    retokenizer.merge(span, attrs={"POS": "X", "TAG": "LS"})
         return doc
 
 
@@ -331,6 +361,19 @@ class SECUQuantityMatcher:
         self.matcher(doc)
         return doc
 
+class ContractObjectMapper:
+    def __int__(self, attr_matcher: ContractDependencyAttributeMatcher):
+        self.attr_matcher = attr_matcher
+    
+    def __call__(self, doc: Doc):
+        self.create_contract_objects(doc)
+        return doc
+    
+    def create_contract_objects(self, doc: Doc):
+        raise NotImplementedError()
+    
+    
+
 
 class SECUObjectMapper:
     '''
@@ -433,9 +476,6 @@ class SECUMatcher:
             - ._.secus (helper to get all SECU ents)
             *[AliasMatcher] ._.alias_cache 
             (see AliasCache class for details, but in short: maps to keep track of aliases)
-            *[AliasMatcher] ._.base_alias_set (set[tuple[int, int]])
-            *[AliasMatcher] ._.reference_alias_set (set[tuple[int, int]])
-            *[AliasMatcher] ._.token_to_alias_map (dict[int, tuple[int,int]])
         Span extensions:
             - ._.premerge_tokens (tokens before retokenization)
             - ._.was_merged (were any tokens in the Span retokenized)
@@ -704,6 +744,7 @@ def _add_SECU_ent(matcher, doc: Doc, i: int, matches):
             "agreement",
             "agent",
             "indebenture",
+            "certificate",
             # "rights",
             "shares",
         ],
@@ -714,6 +755,15 @@ def _add_SECU_ent(matcher, doc: Doc, i: int, matches):
 
 def _add_SECUATTR_ent(matcher, doc: Doc, i: int, matches):
     _add_ent(doc, i, matches, "SECUATTR")
+
+def _add_PLACEMENT_ent(matcher, doc: Doc, i: int, matches):
+    _add_ent(
+        doc,
+        i,
+        matches,
+        "PLACEMENT",
+        always_overwrite=["ORG", "PER"]
+    )
 
 def _add_CONTRACT_ent(matcher, doc: Doc, i: int, matches):
     _add_ent(
@@ -952,24 +1002,34 @@ class AgreementMatcher:
         self.vocab = vocab
         self.matcher = Matcher(vocab)
         self.add_CONTRACT_ent_to_matcher()
+        self.add_PLACEMENT_ent_to_matcher()
 
     def add_CONTRACT_ent_to_matcher(self):
         patterns = [
             [{"LOWER": "agreement"}],
-            [{"LOWER": "private"}, {"LOWER": "placement"}]
         ]
         self.matcher.add("contract", patterns, on_match=_add_CONTRACT_ent)
+    
+    def add_PLACEMENT_ent_to_matcher(self):
+        patterns = [
+            [{"LOWER": "private"}, {"LOWER": "placement"}],
+        ]
+        self.matcher.add("placement", patterns, on_match=_add_PLACEMENT_ent)
 
     def __call__(self, doc: Doc):
         self.matcher(doc)
         if self.alias_matcher.aliases_are_set is False:
             self.alias_matcher(doc)
         self.alias_setter(doc, get_none_alias_ent_type_spans(doc, "CONTRACT"))
+        self.alias_setter(doc, get_none_alias_ent_type_spans(doc, "PLACEMENT"))
         return doc
 
     # def agreement_callback()
 
 
+@Language.factory("listical_retokenizer")
+def create_listical_retokenizer(nlp, name):
+    return ListicalRetokenizer(nlp.vocab)
 
 
 @Language.factory("secu_matcher")
@@ -1028,6 +1088,11 @@ class SpacyFilingTextSearch:
                 "common_financial_retokenizer",
                 after="security_law_retokenizer"
             )
+            #TODO: refine before actually using
+            # cls._instance.nlp.add_pipe(
+            #     "listical_retokenizer",
+            #     after="common_financial_retokenizer"
+            # )
             cls._instance.nlp.add_pipe("negation_setter")
             cls._instance.nlp.add_pipe("secu_matcher")
             cls._instance.nlp.add_pipe("secuquantity_matcher")

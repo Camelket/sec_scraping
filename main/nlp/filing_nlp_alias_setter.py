@@ -638,12 +638,12 @@ class AliasMatcher:
             patterns = self._get_regex_reference_patterns(base)
             logger.debug(f"working with reference core_str: {[p[1] for p in patterns]}")
             text_to_search = doc[base.end:].text
+            search_start_offset = (len(doc.text) - len(text_to_search))
             for (pattern, core_str) in patterns:
                 for m in re.finditer(pattern, text_to_search):
                     if m:
                         match = re.search(core_str, text_to_search[m.span()[0]:m.span()[1]+1])
                         if match:
-                            search_start_offset = (len(doc.text) - len(text_to_search))
                             start_char = search_start_offset + m.start() + match.start()
                             end_char = search_start_offset + m.start() + match.end() - 1
                             start_token = self.chars_to_tokens_map.get(start_char)

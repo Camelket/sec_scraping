@@ -744,6 +744,10 @@ SECU_DATE_RELATION_PATTERNS_FROM_ROOT_VERB = [
     
 ]
 
+CONTRACT_DATE_RELATION_PATTERNS_FROM_ROOT_VERB = [
+    #TODO["epic"=important] add the daterelation fetching to the ContractDependencyAttributeMatcher
+]
+
 # FIXME: which patterns below are to general and cause the wrong assignment to a unassociated SECU during relationship building?
 SECU_SECUQUANTITY_PATTERNS = [
     [

@@ -20,7 +20,6 @@ from main.nlp.filing_nlp_dateful_relations import DatetimeRelation
 from main.nlp.filing_nlp_patterns import (
     AT_CONTEXT_UNIT_TAIL_PATTERNS,
     add_anchor_pattern_to_patterns,
-    SECU_DATE_RELATION_PATTERNS_FROM_ROOT_VERB,
     SECU_SECUQUANTITY_PATTERNS,
     SECU_SOURCE_SECU_SECUQUANTITY_PATTERNS,
     SECU_DATE_RELATION_PATTERNS_FROM_ROOT_VERB,
@@ -162,6 +161,273 @@ class DependencyAttributeMatcher:
         for pattern in complete_patterns:
             matches += self.get_candidate_matches(pattern)
         return matches if matches != [] else None
+    
+    def get_aux_verbs(self, token: Token) -> list[Token] | None:
+        """get the child aux verbs of token."""
+        candidate_matches = self.get_candidate_matches(
+            [
+                {"RIGHT_ID": "anchor", "TOKEN": token},
+                {
+                    "LEFT_ID": "anchor",
+                    "REL_OP": ">>",
+                    "RIGHT_ID": "aux_verb",
+                    "RIGHT_ATTRS": {"POS": {"IN": ["VERB", "AUX"]}},
+                },
+            ]
+        )
+        # logger.debug(f"canddiate_matches for aux_verb: {candidate_matches}")
+        if candidate_matches != []:
+            aux_verbs = []
+            for match in candidate_matches:
+                for aux in self._get_tokens_with_tag_from_match_tuples(
+                    match, "aux_verb"
+                ):
+                    if aux is None:
+                        break
+                    aux_verbs.append(aux)
+            return aux_verbs if aux_verbs != [] else None
+        return None
+
+    def get_parent_verb(self, token: Token) -> Token | None:
+        """get the closest parent verb in the dependency tree of token."""
+        candidate_matches = self.get_candidate_matches(
+            [
+                {"RIGHT_ID": "anchor", "TOKEN": token},
+                {
+                    "LEFT_ID": "anchor",
+                    "REL_OP": "<<",
+                    "RIGHT_ID": "parent_verb",
+                    "RIGHT_ATTRS": {"POS": {"IN": ["VERB", "AUX"]}},
+                    "IS_OPTIONAL": False,
+                },
+            ]
+        )
+        if candidate_matches != []:
+            if len(candidate_matches) > 1:
+                verbs = []
+                for candidate_match in candidate_matches:
+                    for entry in candidate_match:
+                        candidate_token, right_id = entry
+                        if right_id == "parent_verb":
+                            verbs.append(candidate_token)
+                dep_distances = [None] * len(verbs)
+                for idx, verb in enumerate(verbs):
+                    dep_distances[idx] = get_dep_distance_between(token, verb)
+                min_idx = dep_distances.index(min(dep_distances))
+                return verbs[min_idx]
+            else:
+                for entry in candidate_matches[0]:
+                    candidate_token, right_id = entry
+                    if right_id == "parent_verb":
+                        return candidate_token
+        return None
+
+    def get_root_verb(self, token: Token) -> Token | None:
+        """get the root parent verb of the dependency tree of token."""
+        candidate_matches = self.get_candidate_matches(
+            [
+                {"RIGHT_ID": "anchor", "TOKEN": token},
+                {
+                    "LEFT_ID": "anchor",
+                    "REL_OP": "<<",
+                    "RIGHT_ID": "root_verb",
+                    "RIGHT_ATTRS": {"POS": {"IN": ["VERB", "AUX"]}},
+                    "IS_OPTIONAL": False,
+                },
+            ]
+        )
+        # logger.debug(f"canddiate_matches for root_verb: {candidate_matches}")
+        if candidate_matches != []:
+            if len(candidate_matches) > 1:
+                verbs = []
+                for candidate_match in candidate_matches:
+                    for entry in candidate_match:
+                        candidate_token, right_id = entry
+                        if right_id == "root_verb":
+                            verbs.append(candidate_token)
+                dep_distances = [None] * len(verbs)
+                for idx, verb in enumerate(verbs):
+                    dep_distances[idx] = get_dep_distance_between(token, verb)
+                max_idx = dep_distances.index(max(dep_distances))
+                return verbs[max_idx]
+            else:
+                for entry in candidate_matches[0]:
+                    candidate_token, right_id = entry
+                    if right_id == "root_verb":
+                        return candidate_token
+        return None
+    
+    def get_date_relation(self, token: Token, relation_patterns: list[list[dict]], context_patterns: list[list[dict]]=None) -> dict:
+        '''
+        fetch the datetime relation associated with token, currently done through the root verb of token.
+        Must be supplied by relation_patterns, will raise ValueError otherwise.
+
+        The anchor for the relation pattern will be the root_verb and 
+        for the context pattern the root of the DATE entity.
+        Patterns should be like the patterns for spacy dependency parsers, expect for:
+        omit the root entry, there must be a dict with LEFT_ID = "anchor" for each pattern.
+        eg: 
+            [
+                [   
+                    {
+                        "LEFT_ID": "anchor",
+                        "REL_OP": ">>",
+                        "RIGHT_ID": "prep_phrase_start",
+                        "RIGHT_ATTRS": {"DEP": "prep", "LOWER":  "as"}
+                    },
+                    {
+                        "LEFT_ID": "prep_phrase_start",
+                        "REL_OP": ">",
+                        "RIGHT_ID": "second_prep",
+                        "RIGHT_ATTRS": {"DEP": "prep", "LOWER": "of"}
+                    },
+                ],
+                [
+                    ...next pattern would go here...
+                ]
+            ]
+        '''
+        return self._get_date_relation(token, relation_patterns, context_patterns)
+    
+    def _get_date_relation(self, token: Token, relation_patterns: list[list[dict]], context_patterns: list[list[dict]]) -> dict:
+        if relation_patterns is None:
+            raise ValueError("get_date_relation must be supplied by relation_patterns got None.")
+        if context_patterns is None:
+            logger.debug(f"Ensure you didnt want to supply a context_patterns parameter when calling 'get_date_relation'.")
+        unformatted_dates = []
+        unformatted_dates += self._get_date_relation_through_root_verb(token, relation_patterns)
+        # TODO: think and write how i will need the timedelta part of this and how it could be used
+        dates = {"datetime": [], "timedelta": []}
+        contexts = []
+        for unformatted in unformatted_dates:
+            if context_patterns:
+                context = self._get_context_for_date_relation(unformatted.root, context_patterns)
+            else:
+                context = dict()
+            date = formater.coerce_tokens_to_datetime(unformatted)
+            if date:
+                relation = DatetimeRelation(unformatted, date, context)
+                if relation not in dates["datetime"]:
+                    dates["datetime"].append(relation)
+            else:
+                date = formater.coerce_tokens_to_timedelta(unformatted)
+                if date:
+                    dates["timedelta"].append({"date": date, "context": context})
+        return dates
+        # TODO: fix the implementation of date_relation in a SECU context since we should only have one date in a specific context, right?
+        # we should only have one date in a quantity context otherwise we cant be certain how they relate ?
+        # options: 1) create a set of the datetimerelations and check if len <= 1 when assigning to quantity
+    
+    def _get_date_relation_through_root_verb(self, token: Token, relation_patterns: list[list[dict]]=None) -> list[Span]:
+        if token.sent.root == token:
+            root_verb = token
+        else:
+            root_verb = self.get_root_verb(token)
+        result = []
+        if root_verb:
+            anchor_pattern = self._get_anchor_pattern(root_verb)
+            date_relation_root_verb_patterns = add_anchor_pattern_to_patterns(
+                anchor_pattern,
+                relation_patterns
+            )
+            for pattern in date_relation_root_verb_patterns:
+                candidate_matches = self.get_candidate_matches(pattern)
+                for match in candidate_matches:
+                    for rel in self._get_tokens_with_tag_from_match_tuples(
+                        match, "date_start"
+                    ):
+                        if rel is None:
+                            break
+                        result.append(extend_token_ent_to_span(rel, rel.doc))
+        return result
+
+    def _get_context_for_date_relation(self, date_root_token: Token, context_patterns: list[list[dict]]) -> dict:
+        """
+        Returns:
+            {"original": list[tuple], "formatted": dict[str, dict]}
+        """
+        logger.debug(
+            f"getting context for date relation with root token: {date_root_token}"
+        )
+        date_root_pattern = self._get_anchor_pattern(date_root_token)
+        complete_patterns = add_anchor_pattern_to_patterns(
+            date_root_pattern,
+            context_patterns
+        )
+        matches = self.run_patterns_for_match(complete_patterns)
+        logger.debug(f"matches for date_relation context: {matches}")
+        # TODO: Filter the context matches to eliminate duplicates (or a set that is fully contained within another)
+        if not matches:
+            return None
+        merged_set = self._merge_wanted_tags_into_set(matches)
+        formatted_tags = self._format_wanted_tags_from_set_as_dict(merged_set)
+        return {"original": merged_set, "formatted": formatted_tags}
+
+    def _merge_wanted_tags_into_set(
+        self,
+        matches: list[list[tuple]],
+        wanted_tags: list[str] = [
+            "prep1",
+            "prep2",
+            "prep_end",
+            "adj_to_aux",
+            "adj_to_verb",
+            "aux_verb",
+            "verb",
+        ],
+    ) -> list[tuple]:
+        merged_set = set()
+        for match in matches:
+            for entry in match:
+                if entry[1] in wanted_tags:
+                    if entry not in merged_set:
+                        merged_set.add(entry)
+        return merged_set if len(merged_set) != 0 else None
+
+    def _format_wanted_tags_from_set_as_dict(
+        self,
+        wanted_tags_set,
+        default_groups: list[str] = ["prep", "aux_verb", "adj", "verb"],
+        group_mapping: dict[str, str] = {
+            "prep1": "prep",
+            "prep2": "prep",
+            "prep_end": "prep",
+            "verb": "verb",
+            "aux_verb": "aux_verb",
+            "adj_to_aux": "adj",
+            "adj_to_verb": "adj",
+        },
+        sort_order: dict[str, list] = {"prep": ["prep_end", "prep2", "prep1"]},
+    ) -> dict[str, dict]:
+        finished_grouping = {k: [] for k in default_groups}
+        unsorted_grouping = defaultdict(list)
+        # wanted_tags_set = self._merge_wanted_tags_into_set(matches)
+        def _index_for_sort_group(element, sort_group):
+            idx = -1
+            try:
+                idx = sort_group.index(element)
+            except ValueError:
+                return len(sort_group) + 1
+            else:
+                return idx
+
+        for entry in wanted_tags_set:
+            parent_tag = group_mapping.get(entry[1], None)
+            if parent_tag:
+                unsorted_grouping[parent_tag].append(entry)
+        for key in unsorted_grouping.keys():
+            if sort_order.get(key, None):
+                finished_group = [
+                    i[0]
+                    for i in sorted(
+                        unsorted_grouping[key],
+                        key=lambda x: _index_for_sort_group(x[1], sort_order.get(key)),
+                    )
+                ]
+                finished_grouping[key] = finished_group
+            else:
+                finished_grouping[key] = [i[0] for i in unsorted_grouping[key]]
+        return finished_grouping
 
     def _get_tokens_with_tag_from_match_tuples(
         self, match: list[tuple[Token, str]], tag: str
@@ -286,6 +552,37 @@ class DependencyAttributeMatcher:
 
             return build_matches_from_candidates(candidates_cache, tree)
 
+class ContractDependencyAttributeMatcher(DependencyAttributeMatcher):
+    def __init__(self):
+        super().__init__()
+    
+    def get_date_relation(self, token: Token):
+        raise NotImplementedError()
+    
+    def get_actions(self, token: Token):
+        raise NotImplementedError()
+    
+    def get_subjects(self, token: Token):
+        raise NotImplementedError()
+    
+    def get_scope(self, token: Token):
+        # THIS IS WRONG APPROACH TO SCOPE
+        # scope root is the parent verb of token and the scope is the left and rightmost children of scope root ()
+        scope_root = None
+        for ancestor in token.ancestors:
+            if ancestor.pos_ == "VERB":
+                scope_root = ancestor
+                break
+        if not scope_root:
+            if token.pos_ == "VERB":
+                scope_root = token
+        if not scope_root:
+            return None
+        else:
+            left_boundary = token.doc[min([d.i for d in scope_root.descendants])]
+            right_boundary = token.doc[max([d.i for d in scope_root.descendants])]
+            return (left_boundary, scope_root, right_boundary)
+        
 
 class SecurityDependencyAttributeMatcher(DependencyAttributeMatcher):
     def __init__(self):
@@ -314,14 +611,9 @@ class SecurityDependencyAttributeMatcher(DependencyAttributeMatcher):
                         r.append(x)
         return result
 
-        
+    def get_date_relation(self, token: Token):
+        return self._get_date_relation(token, SECU_DATE_RELATION_PATTERNS_FROM_ROOT_VERB, SECU_DATE_RELATION_FROM_ROOT_VERB_CONTEXT_PATTERNS)
 
-    # def _filter_negated(self, args):
-    #     # TODO: can this be done as simple as checking ._.negated on the main verb/adj ?
-    #     pass
-
-    # TODO: is get_exercise_price and get_expiry_date in the correct location here, or should it be moved to either SECU or somewhere else?
-    # eg in a class that handles the information of date_relation and quantities to form a definitv object (eg: exercise_price with date, expiry ect)
     def get_exercise_price(self, secu: Token) -> tuple[float, str]|None:
         prices = self._get_exercise_price(secu)
         if not prices:
@@ -373,115 +665,7 @@ class SecurityDependencyAttributeMatcher(DependencyAttributeMatcher):
             result.append((amount, symbol))
         return result
 
-    def get_date_relation(self, token: Token) -> dict:
-        unformatted_dates = []
-        unformatted_dates += self._get_date_relation_through_root_verb(token)
-        # TODO: think and write how i will need the timedelta part of this and how it could be used
-        dates = {"datetime": [], "timedelta": []}
-        contexts = []
-        for unformatted in unformatted_dates:
-            context = self._get_context_for_date_relation(unformatted.root)
-            date = formater.coerce_tokens_to_datetime(unformatted)
-            if date:
-                relation = DatetimeRelation(unformatted, date, context)
-                if relation not in dates["datetime"]:
-                    dates["datetime"].append(relation)
-            else:
-                date = formater.coerce_tokens_to_timedelta(unformatted)
-                if date:
-                    dates["timedelta"].append({"date": date, "context": context})
-        return dates
-        # TODO: fix the implementation of date_relation in a SECU context since we should only have one date in a specific context, right?
-        # we should only have one date in a quantity context otherwise we cant be certain how they relate ?
-        # options: 1) create a set of the datetimerelations and check if len <= 1 when assigning to quantity
-
-    def _get_context_for_date_relation(self, date_root_token: Token) -> dict:
-        """
-        Returns:
-            {"original": list[tuple], "formatted": dict[str, dict]}
-        """
-        logger.debug(
-            f"getting context for date relation with root token: {date_root_token}"
-        )
-        date_root_pattern = self._get_anchor_pattern(date_root_token)
-        complete_patterns = add_anchor_pattern_to_patterns(
-            date_root_pattern, SECU_DATE_RELATION_FROM_ROOT_VERB_CONTEXT_PATTERNS
-        )
-        matches = self.run_patterns_for_match(complete_patterns)
-        logger.debug(f"matches for date_relation context: {matches}")
-        # TODO: Filter the context matches to eliminate duplicates (or a set that is fully contained within another)
-        if not matches:
-            return None
-        merged_set = self._merge_wanted_tags_into_set(matches)
-        formatted_tags = self._format_wanted_tags_from_set_as_dict(merged_set)
-        return {"original": merged_set, "formatted": formatted_tags}
-
-    def _merge_wanted_tags_into_set(
-        self,
-        matches: list[list[tuple]],
-        wanted_tags: list[str] = [
-            "prep1",
-            "prep2",
-            "prep_end",
-            "adj_to_aux",
-            "adj_to_verb",
-            "aux_verb",
-            "verb",
-        ],
-    ) -> list[tuple]:
-        merged_set = set()
-        for match in matches:
-            for entry in match:
-                if entry[1] in wanted_tags:
-                    if entry not in merged_set:
-                        merged_set.add(entry)
-        return merged_set if len(merged_set) != 0 else None
-
-    def _format_wanted_tags_from_set_as_dict(
-        self,
-        wanted_tags_set,
-        default_groups: list[str] = ["prep", "aux_verb", "adj", "verb"],
-        group_mapping: dict[str, str] = {
-            "prep1": "prep",
-            "prep2": "prep",
-            "prep_end": "prep",
-            "verb": "verb",
-            "aux_verb": "aux_verb",
-            "adj_to_aux": "adj",
-            "adj_to_verb": "adj",
-        },
-        sort_order: dict[str, list] = {"prep": ["prep_end", "prep2", "prep1"]},
-    ) -> dict[str, dict]:
-        finished_grouping = {k: [] for k in default_groups}
-        unsorted_grouping = defaultdict(list)
-        # wanted_tags_set = self._merge_wanted_tags_into_set(matches)
-        def _index_for_sort_group(element, sort_group):
-            idx = -1
-            try:
-                idx = sort_group.index(element)
-            except ValueError:
-                return len(sort_group) + 1
-            else:
-                return idx
-
-        for entry in wanted_tags_set:
-            parent_tag = group_mapping.get(entry[1], None)
-            if parent_tag:
-                unsorted_grouping[parent_tag].append(entry)
-        for key in unsorted_grouping.keys():
-            if sort_order.get(key, None):
-                finished_group = [
-                    i[0]
-                    for i in sorted(
-                        unsorted_grouping[key],
-                        key=lambda x: _index_for_sort_group(x[1], sort_order.get(key)),
-                    )
-                ]
-                finished_grouping[key] = finished_group
-            else:
-                finished_grouping[key] = [i[0] for i in unsorted_grouping[key]]
-        return finished_grouping
-
+    
     def _get_source_secu_context_through_secuquantity(
         self, token: Token
     ) -> SourceContext | None:
@@ -566,28 +750,6 @@ class SecurityDependencyAttributeMatcher(DependencyAttributeMatcher):
                         )
         return result if len(result) != 0 else None
 
-    def _get_date_relation_through_root_verb(self, token: Token) -> list[Span]:
-        if token.sent.root == token:
-            root_verb = token
-        else:
-            root_verb = self.get_root_verb(token)
-        result = []
-        if root_verb:
-            anchor_pattern = self._get_anchor_pattern(root_verb)
-            date_relation_root_verb_patterns = add_anchor_pattern_to_patterns(
-                anchor_pattern, SECU_DATE_RELATION_PATTERNS_FROM_ROOT_VERB
-            )
-            for pattern in date_relation_root_verb_patterns:
-                candidate_matches = self.get_candidate_matches(pattern)
-                for match in candidate_matches:
-                    for rel in self._get_tokens_with_tag_from_match_tuples(
-                        match, "date_start"
-                    ):
-                        if rel is None:
-                            break
-                        result.append(extend_token_ent_to_span(rel, rel.doc))
-        return result
-
     def get_quantities(self, token: Token) -> list[Token] | None:
         anchor_pattern = self._get_anchor_pattern(token)
         patterns = add_anchor_pattern_to_patterns(
@@ -629,97 +791,4 @@ class SecurityDependencyAttributeMatcher(DependencyAttributeMatcher):
         return result if result != [] else None
 
 
-    def get_aux_verbs(self, token: Token) -> list[Token] | None:
-        """get the child aux verbs of token."""
-        candidate_matches = self.get_candidate_matches(
-            [
-                {"RIGHT_ID": "anchor", "TOKEN": token},
-                {
-                    "LEFT_ID": "anchor",
-                    "REL_OP": ">>",
-                    "RIGHT_ID": "aux_verb",
-                    "RIGHT_ATTRS": {"POS": {"IN": ["VERB", "AUX"]}},
-                },
-            ]
-        )
-        # logger.debug(f"canddiate_matches for aux_verb: {candidate_matches}")
-        if candidate_matches != []:
-            aux_verbs = []
-            for match in candidate_matches:
-                for aux in self._get_tokens_with_tag_from_match_tuples(
-                    match, "aux_verb"
-                ):
-                    if aux is None:
-                        break
-                    aux_verbs.append(aux)
-            return aux_verbs if aux_verbs != [] else None
-        return None
-
-    def get_parent_verb(self, token: Token) -> Token | None:
-        """get the closest parent verb in the dependency tree of token."""
-        candidate_matches = self.get_candidate_matches(
-            [
-                {"RIGHT_ID": "anchor", "TOKEN": token},
-                {
-                    "LEFT_ID": "anchor",
-                    "REL_OP": "<<",
-                    "RIGHT_ID": "parent_verb",
-                    "RIGHT_ATTRS": {"POS": {"IN": ["VERB", "AUX"]}},
-                    "IS_OPTIONAL": False,
-                },
-            ]
-        )
-        if candidate_matches != []:
-            if len(candidate_matches) > 1:
-                verbs = []
-                for candidate_match in candidate_matches:
-                    for entry in candidate_match:
-                        candidate_token, right_id = entry
-                        if right_id == "parent_verb":
-                            verbs.append(candidate_token)
-                dep_distances = [None] * len(verbs)
-                for idx, verb in enumerate(verbs):
-                    dep_distances[idx] = get_dep_distance_between(token, verb)
-                min_idx = dep_distances.index(min(dep_distances))
-                return verbs[min_idx]
-            else:
-                for entry in candidate_matches[0]:
-                    candidate_token, right_id = entry
-                    if right_id == "parent_verb":
-                        return candidate_token
-        return None
-
-    def get_root_verb(self, token: Token) -> Token | None:
-        """get the root parent verb of the dependency tree of token."""
-        candidate_matches = self.get_candidate_matches(
-            [
-                {"RIGHT_ID": "anchor", "TOKEN": token},
-                {
-                    "LEFT_ID": "anchor",
-                    "REL_OP": "<<",
-                    "RIGHT_ID": "root_verb",
-                    "RIGHT_ATTRS": {"POS": {"IN": ["VERB", "AUX"]}},
-                    "IS_OPTIONAL": False,
-                },
-            ]
-        )
-        # logger.debug(f"canddiate_matches for root_verb: {candidate_matches}")
-        if candidate_matches != []:
-            if len(candidate_matches) > 1:
-                verbs = []
-                for candidate_match in candidate_matches:
-                    for entry in candidate_match:
-                        candidate_token, right_id = entry
-                        if right_id == "root_verb":
-                            verbs.append(candidate_token)
-                dep_distances = [None] * len(verbs)
-                for idx, verb in enumerate(verbs):
-                    dep_distances[idx] = get_dep_distance_between(token, verb)
-                max_idx = dep_distances.index(max(dep_distances))
-                return verbs[max_idx]
-            else:
-                for entry in candidate_matches[0]:
-                    candidate_token, right_id = entry
-                    if right_id == "root_verb":
-                        return candidate_token
-        return None
+    
