@@ -393,6 +393,7 @@ class SECUObjectMapper:
                 maps the root token idx of the secuquantity
                 to the created SourceQuantityRelation
             )
+        - ._.secuquantity_secu_map (maps the quantity to its parent secu)
 
     This component must be placed after the SecuQuantityMatcher
     and the SECUMatcher in the spacy pipeline.
@@ -408,6 +409,7 @@ class SECUObjectMapper:
             {"name": "secu_objects_map", "kwargs": {"default": dict()}}, #Type: Dict[int, SECU]
             {"name": "quantity_relation_map", "kwargs": {"default": dict()}}, #Type: Dict[int, QuantityRelation]
             {"name": "source_quantity_relation_map", "kwargs": {"default": dict()}}, #Type: Dict[int, SourceQuantityRelation], int being the index of the secuquantity of the relation
+            {"name": "secuquantity_secu_map", "kwargs": {"default": dict()}}, # Type: Dict[int, int]
         ]
         for each in doc_extensions:
             _set_extension(Doc, each["name"], each["kwargs"])
@@ -427,6 +429,16 @@ class SECUObjectMapper:
                     for quantity_relation in secu.quantity_relations:
                         if isinstance(quantity_relation, QuantityRelation):
                             doc._.quantity_relation_map[quantity_relation.quantity.original.i] = quantity_relation
+    
+    def set_secuquantity_secu_map(self, doc: Doc):
+        for secu_key, secus in doc._.secu_objects.items():
+            for secu in secus:
+                if secu.quantity_relations:
+                    for quantity_relation in secu.quantity_relations:
+                        if isinstance(quantity_relation, QuantityRelation):
+                            doc._.secuquantity_secu_map[quantity_relation.quantity.original.i] = secu.original.i
+
+
     
     def handle_source_quantity_relations(self, doc: Doc):
         for secu_key, secus in doc._.secu_objects.items():
@@ -461,6 +473,7 @@ class SECUObjectMapper:
         # TODO[epic=maybe]: maybe add a map of SECU objects to sent indices so we can create a map of context for sents and therefor a context to SECU map?
         self.create_secu_objects(doc)
         self.set_quantity_relation_map(doc)
+        self.set_secuquantity_secu_map(doc)
         self.handle_source_quantity_relations(doc)
         return doc
     
@@ -1075,7 +1088,7 @@ class SpacyFilingTextSearch:
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super(SpacyFilingTextSearch, cls).__new__(cls)
-            cls._instance.nlp = spacy.load("en_core_web_lg")
+            cls._instance.nlp = spacy.load("en_core_web_trf")
             cls._instance.nlp.add_pipe(
                 "secu_act_matcher",
                 first=True

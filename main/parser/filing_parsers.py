@@ -749,7 +749,7 @@ class HTMFilingParser(AbstractFilingParser):
             else:
                 hrefs.append(None)
         idx = 0
-        print(len(table), len(hrefs))
+        # print(len(table), len(hrefs))
         for href in hrefs:
             table[idx].append(href)
             idx += 1
@@ -928,6 +928,8 @@ class HTMFilingParser(AbstractFilingParser):
             re.compile(r"(\s){2,}", re.MULTILINE), " ", section_content
         )
         section_content = re.sub(re.compile(r"(?<!(\.|\?|!))(\n)(?![A-Z0-9])", re.MULTILINE), " ", section_content)
+        section_content = re.sub(re.compile(r'\u201d', re.MULTILINE), '"', section_content)
+        section_content = re.sub(re.compile(r'\u201c', re.MULTILINE), '"', section_content)
         section_content = re.sub(re.compile(r"(?<!(\.|\?|!)(\s))(\n)((\s)?![A-Z0-9])", re.MULTILINE), " ", section_content)
         section_content = re.sub(re.compile(r"(?<!(\.|\?|!)(\s))(\n)(?![A-Z0-9])", re.MULTILINE), " ", section_content)
         section_content = re.sub(re.compile(r"(?<!(\.|\?|!))(\n)((\s)?![A-Z0-9])", re.MULTILINE), " ", section_content)
@@ -1987,10 +1989,10 @@ class ParserS3(HTMFilingParser):
         else:
             doc_ = doc
         sections = self.split_by_table_of_contents(doc_)
-        logger.debug(
-            f"found sections: {len(sections) if sections is not None else None, [sec.title if sec.title else None for sec in sections]}"
-        )
         if sections is not None:
+            logger.debug(
+                f"found sections: {len(sections) if sections is not None else None, [sec.title if sec.title else None for sec in sections]}"
+            )
             return sections
         else:
             raise AttributeError(
@@ -2875,7 +2877,7 @@ class ParserEFFECT(XMLFilingParser):
             # print(effective_data.get('form'))
             # print(effective_data.find(".//form"))
             for_form = self._get_for_form(effective_data)
-            print(f"for_form value: {for_form}")
+            # print(f"for_form value: {for_form}")
             content_dict = {
                 "for_form": for_form,
                 "effective_date": doc.find(".//finalEffectivenessDispDate").text,
@@ -2897,7 +2899,7 @@ class ParserEFFECT(XMLFilingParser):
 
     def _get_for_form(self, element: ElementTree.Element) -> str|None:
         # find correct way to access the children
-        print(f"checking for form element in {[(i.text, i) for i in element]}")
+        # print(f"checking for form element in {[(i.text, i) for i in element]}")
         # print(f"elemnt form: {element.find('form').text}")
         if isinstance(element.find("form"), ElementTree.Element):
             return element.find("form").text

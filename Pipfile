@@ -12,6 +12,7 @@ coreferee = "*"
 pysec-downloader = "*"
 cython = "*"
 scalene = "*"
+doccano = "*"
 
 [dev-packages]
 ipykernel = "*"

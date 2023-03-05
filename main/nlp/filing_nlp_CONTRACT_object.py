@@ -12,7 +12,6 @@ logger = logging.getLogger(__name__)
 
 '''
 Group LegalAgreement by unique identifier during creation, like secu_objects with the secu_key.
-maybe discard this whole file.
 '''
 
 class ContractObject:
@@ -22,14 +21,7 @@ class ContractObject:
         self.subjects: list[tuple[int, int]] = list()
         self.actions: list[tuple[int, int]] = list() #verbal phrases?
     
-# class ContractObjectMapper:
-#     def __int__(self, attr_matcher: ContractDependencyAttributeMatcher):
-    
-#     def get_actions
 
-#     def get_subjects
-
-#     def get_scope
 
         
 

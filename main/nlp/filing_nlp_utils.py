@@ -100,18 +100,24 @@ def extend_token_ent_to_span(token: Token, doc: Doc) -> Span|None:
     logger.debug(
         f"extending ent span to surrounding for origin token: {token, token.i}"
     )
-    for i in range(token.i - 1, 0, -1):
-        if doc[i].ent_type_ == token.ent_type_:
-            span_tokens.insert(0, doc[i])
-            logger.debug(f"found preceding token matching ent: {doc[i]}")
-        else:
-            break
-    for i in range(token.i + 1, 10000000, 1):
-        if doc[i].ent_type_ == token.ent_type_:
-            span_tokens.append(doc[i])
-            logger.debug(f"found following token matching ent: {doc[i]}")
-        else:
-            break
+    if token.i <= doc[0].i:
+        pass
+    else:
+        for i in range(token.i - 1, doc[0].i-1, -1):
+            if doc[i].ent_type_ == token.ent_type_:
+                span_tokens.insert(0, doc[i])
+                logger.debug(f"found preceding token matching ent: {doc[i]}")
+            else:
+                break
+    if token.i >= doc[-1].i:
+        pass
+    else:
+        for i in range(token.i + 1, doc[-1].i, 1):
+            if doc[i].ent_type_ == token.ent_type_:
+                span_tokens.append(doc[i])
+                logger.debug(f"found following token matching ent: {doc[i]}")
+            else:
+                break
     logger.debug(f"making tokens to span: {span_tokens}")
     if len(span_tokens) <= 1:
         span = Span(doc, token.i, token.i + 1, label=token.ent_type_)

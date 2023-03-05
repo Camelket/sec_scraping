@@ -5,7 +5,9 @@ from spacy.tokens import Token, Span, Doc
 from spacy.vocab import Vocab
 from spacy.matcher import Matcher
 from spacy.language import Language
+from spacy.util import ensure_path
 import logging
+import json
 from operator import itemgetter
 from typing import Any, Callable, Generator
 from .filing_nlp_utils import _set_extension, get_dep_distance_between_spans, get_span_distance, change_capitalization_after_symbol, get_none_alias_ent_type_spans
@@ -122,6 +124,7 @@ class AliasCache:
         An alias cache should only be used with a single Doc object
         No overlapping aliases.
         An alias can only have one origin assigned through a similarity score.
+        must be serializable with msgpacker
     '''
 
     def __init__(self):
@@ -145,6 +148,24 @@ class AliasCache:
         self._parent_map: dict[tuple[int, int], list[tuple[int, int]]] = defaultdict(list) # map an item to its immediate parent
         self._children_map: dict[tuple[int, int], list[tuple[int, int]]] = defaultdict(list) # map an item to all its immediate children
         self._tuple_to_type_map: dict[tuple[int, int], str] = dict() # map a tuple to its associacted type
+    
+    # def to_disk(self, path, exclude=tuple()):
+    #     # This will receive the directory path + /my_component
+    #     path = ensure_path(path)
+    #     if not path.exists():
+    #         path.mkdir()
+    #     data_path = path / "data.json"
+    #     with data_path.open("w", encoding="utf8") as f:
+    #         f.write(json.dumps(self.__dict__))
+        
+    # def from_disk(self, path, exclude=tuple()):
+    #     # This will receive the directory path + /my_component
+    #     print(f"CALLED FROM DISK OF ALIAS CACHE")
+    #     _set_alias_matcher_needed_extensions()
+    #     data_path = path / "data.json"
+    #     with data_path.open("r", encoding="utf8") as f:
+    #         self.__dict__ = json.load(f)
+    #     return self
     
     def _pretty_print_tree_from_origin(self, origin: tuple[int, int], doc: Doc):
         # TODO["epic"=maybe]: implement or find library for proper pretty print of a tree
@@ -440,61 +461,8 @@ class AliasCache:
         else:
             raise TypeError(f"expecting spacy.tokens.Token or spacy.tokens.Span, got: {type(alias)}")
         return (sent_start, sent_end)
-        
-    
-class AliasMatcher:
-    '''
-    A Component which finds ("alias") in SEC filings and tries to find the references to
-    them further to the right/down in the text.
 
-    Custom Extensions:
-        Doc Extensions:
-            ._.alias_cache 
-            (see AliasCache class for details, but in short: maps to keep track of aliases)
-            ._.parentheses_base_alias_map (dict[tuple[int, int], list[tuple[int, int]]])
-            ._.sent_parentheses_map (dict[tuple[int, int], list[tuple[int, int]]])
-            
-        Span Extensions:
-            ._.is_alias (getter -> boolean)
-            ._.is_base_alias (getter -> boolean)
-            ._.is_reference_alias (getter -> boolean)
-
-        Token Extensions:
-            ._.is_part_of_alias (getter -> boolean)
-            ._.containing_alias_span (getter -> tuple[int, int])
-    '''
-    def __init__(self):
-        self._set_needed_extensions()
-        self.chars_to_tokens_map: dict = None
-        self.parentheses_base_alias_map: dict[tuple[int, int], list[tuple[int, int]]] = None
-        self.aliases_are_set = False
-
-    def __call__(self, doc: Doc):
-        ensure_alias_cache_created(doc)
-        self.chars_to_tokens_map = self._get_chars_to_tokens_map(doc)
-        doc._.parentheses_base_alias_map = self._get_parentheses_base_alias_map(doc, self.chars_to_tokens_map)
-        doc._.sent_parentheses_map = self._get_sent_parentheses_map(doc, doc._.parentheses_base_alias_map)
-        self.handle_base_aliases(doc, doc._.parentheses_base_alias_map)
-        self.aliases_are_set = True
-        return doc
-
-    def handle_base_aliases(self, doc: Doc, parentheses_base_alias_map: dict[tuple[int, int], list[tuple[int, int]]]):
-        base_aliases = []
-        for _, values in parentheses_base_alias_map.items():
-            if len(values) > 0:
-                for value in values:
-                    base_aliases.append(doc[value[0]:value[1]])
-        if len(base_aliases) > 0:
-            self.add_base_aliases(doc, base_aliases, get_references=True)
-    
-    def reinitalize_extensions(self, doc: Doc):
-        doc._.alias_cache = None
-        ensure_alias_cache_created(doc)
-        doc._.parentheses_base_alias_map = defaultdict(list)
-        doc._.sent_parentheses_map = defaultdict(list)
-        self.aliases_are_set = False
-    
-    def _set_needed_extensions(self):
+def _set_alias_matcher_needed_extensions():
         if not Doc.has_extension("alias_cache"):
             Doc.set_extension("alias_cache", default=None)
         
@@ -545,6 +513,61 @@ class AliasMatcher:
             _set_extension(Doc, each["name"], each["kwargs"])
         for each in token_extensions:
             _set_extension(Token, each["name"], each["kwargs"])
+    
+
+class AliasMatcher:
+    '''
+    A Component which finds ("alias") in SEC filings and tries to find the references to
+    them further to the right/down in the text.
+
+    Custom Extensions:
+        Doc Extensions:
+            ._.alias_cache 
+            (see AliasCache class for details, but in short: maps to keep track of aliases)
+            ._.parentheses_base_alias_map (dict[tuple[int, int], list[tuple[int, int]]])
+            ._.sent_parentheses_map (dict[tuple[int, int], list[tuple[int, int]]])
+            
+        Span Extensions:
+            ._.is_alias (getter -> boolean)
+            ._.is_base_alias (getter -> boolean)
+            ._.is_reference_alias (getter -> boolean)
+
+        Token Extensions:
+            ._.is_part_of_alias (getter -> boolean)
+            ._.containing_alias_span (getter -> tuple[int, int])
+    '''
+    def __init__(self):
+        _set_alias_matcher_needed_extensions()
+        self.chars_to_tokens_map: dict = None
+        self.parentheses_base_alias_map: dict[tuple[int, int], list[tuple[int, int]]] = None
+        self.aliases_are_set = False
+
+    def __call__(self, doc: Doc):
+        ensure_alias_cache_created(doc)
+        self.chars_to_tokens_map = self._get_chars_to_tokens_map(doc)
+        doc._.parentheses_base_alias_map = self._get_parentheses_base_alias_map(doc, self.chars_to_tokens_map)
+        doc._.sent_parentheses_map = self._get_sent_parentheses_map(doc, doc._.parentheses_base_alias_map)
+        self.handle_base_aliases(doc, doc._.parentheses_base_alias_map)
+        self.aliases_are_set = True
+        return doc
+
+    def handle_base_aliases(self, doc: Doc, parentheses_base_alias_map: dict[tuple[int, int], list[tuple[int, int]]]):
+        base_aliases = []
+        for _, values in parentheses_base_alias_map.items():
+            if len(values) > 0:
+                for value in values:
+                    base_aliases.append(doc[value[0]:value[1]])
+        if len(base_aliases) > 0:
+            self.add_base_aliases(doc, base_aliases, get_references=True)
+    
+    def reinitalize_extensions(self, doc: Doc):
+        doc._.alias_cache = None
+        ensure_alias_cache_created(doc)
+        doc._.parentheses_base_alias_map = defaultdict(list)
+        doc._.sent_parentheses_map = defaultdict(list)
+        self.aliases_are_set = False
+    
+    
 
     def _get_chars_to_tokens_map(self, doc: Doc) -> dict[int, int]:
         chars_to_tokens = {}
@@ -758,7 +781,8 @@ class MultiComponentAliasSetter:
                     if len(aliases) > 0:
                         multi_base = aliases[-1]
                         components = aliases[:-1]
-                        multi_component_alias_map[multi_base] = components 
+                        if len(components) > 1:
+                            multi_component_alias_map[multi_base] = components 
         return multi_component_alias_map
     
 
