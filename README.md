@@ -1,5 +1,5 @@
 ***
-###ABANDONED
+# ABANDONED
 
 ## sec_scraping
 The aim of this repository is to be able to easily parse SEC-filings and create a model that can be used with a database. Created for dilutionscout.com.
