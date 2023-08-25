@@ -18,3 +18,5 @@ def test_spacy_token_to_timedelta_conversion():
     assert p1 == 5
     assert p1*p2 == timedelta(weeks=5)
 
+# TODO: add tests for words to number 
+

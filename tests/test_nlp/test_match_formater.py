@@ -34,6 +34,16 @@ def test_parse_american_number(input, expected):
 def test_money_string_to_float(input, expected):
     assert f.quantity_string_to_float(input) == expected
 
+@pytest.mark.parametrize(["input", "expected"], [
+    ("no", 0),
+    # ("one thousand and one", 1001),
+    # ("two million five thousand and seven", 2005007),
+    # ("two hundred million", 200000000),
+    # ("twenty thousand", 20000)
+])
+def test_money_words_to_float(input, expected):
+    assert f.quantity_string_to_float(input) == expected
+
 def test_timedelta_conversion_with_numeric_tokens():
     tokens = [t for t in text_search.nlp("3 weeks")]
     assert f.coerce_tokens_to_timedelta(tokens)[0][0] == timedelta(weeks=3)

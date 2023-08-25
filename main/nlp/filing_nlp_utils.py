@@ -242,6 +242,8 @@ def numeric_list():
 
 class WordToNumberConverter():
     numbers_map = {
+        "no": 0,
+        "zero": 0,
         "one": 1,
         "first": 1,
         "two": 2,
@@ -279,9 +281,7 @@ class WordToNumberConverter():
     }
 
     def convert_str_number_name(self, s: str):
-        if self.numbers_map.get(s):
-            return self.numbers_map[s]
-        return None
+        return self.numbers_map.get(s, None)
     
     def convert_str_timedelta(self, s: str):
         if self.timedelta_map.get(s):
@@ -412,11 +412,14 @@ class MatchFormater:
         return None
 
     def quantity_string_to_float(self, quantity_string: str):
+        # TODO: resolve cases like: "one thousand and one million"
+        # TODO: if all characters arent numbers split by words and resolve for word only number
         multiplier = 1
         digits = re.findall("[0-9.,]+", quantity_string)
-        parsed_number = self.parse_american_number("".join(digits))
-        if parsed_number is None:
-            parsed_number = self.w2n.convert_str_number_name(quantity_string)
+        if digits == []:
+            parsed_number = self.w2n.convert_str_number_name(quantity_string.strip())
+        else:
+            parsed_number = self.parse_american_number("".join(digits))
         if parsed_number is not None:
             amount_float = float(parsed_number)
             if re.search(re.compile("million(?:s)?", re.I), quantity_string):
@@ -424,7 +427,7 @@ class MatchFormater:
             if re.search(re.compile("billion(?:s)?", re.I), quantity_string):
                 multiplier = 1000000000
             return amount_float*multiplier
-        logger.warning(f"failed to convert quantity_string: {quantity_string} to float")
+        logger.warning(f"failed to convert quantity_string: {quantity_string} to float; digits:{digits}")
         return None
     
     def coerce_tokens_to_datetime(self, tokens: list[Token]|Span):

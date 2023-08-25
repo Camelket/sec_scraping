@@ -189,7 +189,12 @@ SECU_ENT_REGULAR_PATTERNS = [
 SECUQUANTITY_BASE_CASES = [
     {"ENT_TYPE": {"IN": ["CARDINAL", "MONEY"]}, "OP": "+"},
     {"POS": "NUM", "DEP": "nummod", "OP": "+"},
+    {"LOWER": "no"},
 ]
+
+SECUQUANTITY_SPECIAL_CASES_LOWER = set([
+    "no",
+])
 
 SECUQUANTITY_ENT_PATTERNS = [
     

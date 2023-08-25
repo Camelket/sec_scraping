@@ -26,7 +26,7 @@ from spacy.tokens import Span, Token
 seen_sents = set()
 
 def default_ent_filter(ents):
-    f = list(filter(lambda x: x.label_ not in ["MONEY", "ORDINAL", "CARDINAL"], ents))
+    f = list(filter(lambda x: x.label_ not in ["MONEY", "ORDINAL", "CARDINAL", "LAW", "WORK_OF_ART"], ents))
     for ent1 in f:
         for ent2 in f:
             if ent1 == ent2:
@@ -93,7 +93,7 @@ def doesnt_contain_base_alias(ent1, ent2):
                 
 def filter_unwanted_tokens_from_sdp(sdp_tuple: tuple[Span, Span, list[Token]]):
     new_sdp = []
-    left, right, sdp = sdp_tuple
+    left, right, sdp, ancestor = sdp_tuple
     parents_to_remove = set()
     for t in sdp:
         if t.dep_ in ["conj", "appos"]:
@@ -109,10 +109,10 @@ def filter_unwanted_tokens_from_sdp(sdp_tuple: tuple[Span, Span, list[Token]]):
         #     else:
         #         pass
         new_sdp.append(t)
-    return (sdp_tuple[0], sdp_tuple[1], new_sdp)
+    return (left, right, new_sdp, ancestor)
 
 def is_valid_sdp(sdp_tuple: tuple[Span, Span, list[Token]]):
-    left, right, sdp = sdp_tuple
+    left, right, sdp, _ = sdp_tuple
     # verbs = list(filter(lambda x: x.pos_ == "VERB", sdp))
     if (
         (len(sdp) > 2)
@@ -216,13 +216,11 @@ def group_elements_of_sdp(sdp):
                 group.insert(0, sdp[i])
                 used_idx.add(i)
         groups.append({"name": "unknown", "group": group})
-        
     return sorted(groups, key=lambda x: x["group"][0].i)
 
             
-
 def sdp_counts(sdp_tuple):
-    left, right, sdp = sdp_tuple
+    left, right, sdp, _ = sdp_tuple
     verb_count, noun_count, prep_count, obj_count, pobj_count, dobj_count = 0, 0, 0, 0, 0, 0
     for x in sdp:
         if x.pos_ == "VERB":
@@ -239,6 +237,7 @@ def sdp_counts(sdp_tuple):
             prep_count += 1
     return (verb_count, noun_count, prep_count, obj_count, pobj_count, dobj_count)
 
+
 def sdp_between_ents(doc, ent_filter) -> dict[tuple[Span, Span], tuple[Token]]:
     shortest_dependency_paths = []
     lca = doc.get_lca_matrix()
@@ -250,11 +249,11 @@ def sdp_between_ents(doc, ent_filter) -> dict[tuple[Span, Span], tuple[Token]]:
                 left, right = ent1, ent2
             else:
                 left, right = ent2, ent1
-            if is_valid_ent_type_combination(left, right):
-                if ((left is not None) or (right is not None)) and (left, right) not in seen_combinations:
-                    seen_combinations.add((left, right))
-                    sdp = get_sdp_path(doc, left.root.i, right.root.i, lca)
-                    shortest_dependency_paths.append((left, right, sdp))
+            if ((left is not None) or (right is not None)) and (left, right) not in seen_combinations:
+                seen_combinations.add((left, right))
+                ancestor = lca[left.root.i, right.root.i]
+                sdp = get_sdp_path(doc, left.root.i, right.root.i, lca)
+                shortest_dependency_paths.append((left, right, sdp, ancestor))
     return shortest_dependency_paths
 
 def get_sdps(doc, ent_filter=default_ent_filter, sdp_token_filter=filter_unwanted_tokens_from_sdp, sdp_validation_function=is_valid_sdp):
@@ -269,16 +268,17 @@ def get_sdps(doc, ent_filter=default_ent_filter, sdp_token_filter=filter_unwante
             discarded.append((sdp_tuple, filtered_tuple))
     return valid_sdps, discarded
 
-def get_sdps_noun_verbal(docs):
+
+def get_sdps_noun_verbal(docs, ent_filter=default_ent_filter, sdp_token_filter=filter_unwanted_tokens_from_sdp, sdp_validation_function=is_valid_sdp):
     sdp_groups = []
     for doc in docs:
-        sdps, discarded = get_sdps(doc)
+        sdps, discarded = get_sdps(doc, ent_filter=ent_filter, sdp_token_filter=sdp_token_filter, sdp_validation_function=sdp_validation_function)
         for i, x in enumerate(sdps):
-            left, right, sdp = x
+            left, right, sdp, ancestor = x
             sorted_sdp = sorted(sdp, key=lambda x: x.i)
             sdp_grouped = group_elements_of_sdp(sorted_sdp)
-            sdp_groups.append((left, right, sdp_grouped, x[2]))
-    noun_verbal_unknown_sdps = list(filter(lambda x: (all([i["name"] in ["noun", "verbal", "unknown"] for i in x[2]]) and (len(x[2]) <= 4) and (any([i["name"] == "verbal"] for i in x[2]))) , sdp_groups))
+            sdp_groups.append((left, right, sdp_grouped, sdp, ancestor))
+    noun_verbal_unknown_sdps = list(filter(lambda x: all([all([i["name"] in ["noun", "verbal", "unknown"] for i in x[2]]), (len(x[2]) <= 4), (any([i["name"] == "verbal"] for i in x[2]))]) , sdp_groups))
     return noun_verbal_unknown_sdps
 
 def create_sdp_noun_verbal_dict(left, right, sdp_grouped, sdp):
@@ -331,7 +331,7 @@ def get_subj(token):
     return subjs
 
 def get_subjs_for_sdp(sdp_tuple):
-    left, right, sdp = sdp_tuple
+    left, right, sdp, _ = sdp_tuple
     has_subj = False
     subjs = []
     for t in sdp:

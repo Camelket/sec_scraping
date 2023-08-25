@@ -36,6 +36,7 @@ from main.nlp.filing_nlp_patterns import (
     SECU_ENT_DEPOSITARY_PATTERNS,
     SECU_ENT_SPECIAL_PATTERNS,
     SECUQUANTITY_ENT_PATTERNS,
+    SECUQUANTITY_SPECIAL_CASES_LOWER,
 
 )
 from main.nlp.filing_nlp_constants import (
@@ -819,9 +820,13 @@ def _add_SECUQUANTITY_ent_regular_case(matcher, doc: Doc, i, matches):
     wanted_tokens = []
     for token in match_tokens:
         # logger.debug(f"token: {token}, ent_type: {token.ent_type_}")
-        if ((token.ent_type_ in ["MONEY", "CARDINAL", "SECUQUANTITY"]) and (token.dep_ != "advmod")) or (
-            token.dep_ == "nummod" and token.pos_ == "NUM"
-        ):
+        if (
+            (token.ent_type_ in ["MONEY", "CARDINAL", "SECUQUANTITY"]) and (token.dep_ != "advmod")
+            ) or (
+            (token.dep_ == "nummod" and token.pos_ == "NUM")
+            ) or (
+            (token.ent_type_ not in ["MONEY", "CARDINAL", "SECUQUANTITY"] and (token.lower_ in SECUQUANTITY_SPECIAL_CASES_LOWER))
+            ):
             # end = token.i-1
             wanted_tokens.append(token.i)
     end = sorted(wanted_tokens)[-1] + 1 if wanted_tokens != [] else None
